@@ -253,7 +253,7 @@ app.post('/api/auth/login', (req, res) => {
 
     // For demo, accept "123456" as password
     console.log('DEBUG login attempt:', username, '|', password, '| hash:', user ? user.password.substring(0, 30) : 'no user');
-    if (password !== '123456' && !bcrypt.compareSync(password, user.password)) {
+    if (!bcrypt.compareSync(password, user.password)) {
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
@@ -269,6 +269,33 @@ app.post('/api/auth/login', (req, res) => {
             schoolId: user.schoolId || ''
         }
     });
+});
+
+app.post('/api/auth/forgot-password', (req, res) => {
+    const { username, role, name, newPassword } = req.body;
+    if (!username || !role || !name || !newPassword) {
+        return res.status(400).json({ error: '请填写用户名、身份、单位/姓名和新密码' });
+    }
+    if (String(newPassword).length < 6) {
+        return res.status(400).json({ error: '新密码长度不能少于 6 位' });
+    }
+
+    const users = readJSON('users.json');
+    const userIndex = users.findIndex(u => u.username === username);
+    const user = users[userIndex];
+    const roleMatched = user && (
+        user.role === role ||
+        (role === 'enterprise' && ['enterprise', 'ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(user.role))
+    );
+
+    if (!user || !roleMatched || user.name !== name) {
+        return res.status(400).json({ error: '账号信息校验失败，请确认身份、用户名和单位/姓名' });
+    }
+
+    users[userIndex].password = bcrypt.hashSync(newPassword, 10);
+    users[userIndex].passwordUpdatedAt = new Date().toISOString();
+    writeJSON('users.json', users);
+    res.json({ message: '密码已重置，请使用新密码登录' });
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
@@ -650,7 +677,7 @@ app.get('/api/schools', authMiddleware, (req, res) => {
     if (req.user.role === 'school' && req.user.schoolId) {
         schools = schools.filter(s => s.id === req.user.schoolId);
     }
-    res.json(schools);
+    sendListResponse(req, res, schools, ['name', 'code', 'region', 'type']);
 });
 
 // 获取所有学年
@@ -661,7 +688,40 @@ app.get('/api/schools/years', authMiddleware, (req, res) => {
 });
 
 // 导出学校Excel
-app.get('/api/schools/export', authMiddleware, roleMiddleware('admin'), (req, res) => {
+app.get('/api/schools/export', authMiddleware, (req, res) => {
+    let schools = readJSON('schools.json');
+    if (req.query.academicYear) schools = schools.filter(s => s.academicYear === req.query.academicYear);
+    if (req.user.role === 'school' && req.user.schoolId) schools = schools.filter(s => s.id === req.user.schoolId);
+    const rows = applyListQuery(schools, { ...req.query, page: 1, pageSize: Number.MAX_SAFE_INTEGER }, ['name', 'code', 'region', 'type']).data
+        .map(s => ({
+            code: s.code || '',
+            name: s.name || '',
+            type: s.type || '',
+            serviceType: Array.isArray(s.供餐类型) ? s.供餐类型.join('、') : (s.供餐类型 || ''),
+            region: s.region || '',
+            address: s.address || '',
+            contact: s.contact || '',
+            phone: s.phone || '',
+            studentCount: s.studentCount || 0,
+            staffCount: s.staffCount || 0,
+            canteenCount: s.canteenCount || 0
+        }));
+    exportExcel(res, '学校信息导出', '学校信息', [
+        { key: 'code', label: '学校代码', width: 16 },
+        { key: 'name', label: '学校名称', width: 26 },
+        { key: 'type', label: '学校类型', width: 12 },
+        { key: 'serviceType', label: '供餐类型', width: 18 },
+        { key: 'region', label: '所在区域', width: 14 },
+        { key: 'address', label: '详细地址', width: 32 },
+        { key: 'contact', label: '联系人', width: 12 },
+        { key: 'phone', label: '联系电话', width: 16 },
+        { key: 'studentCount', label: '学生人数', width: 12 },
+        { key: 'staffCount', label: '教职工人数', width: 12 },
+        { key: 'canteenCount', label: '食堂数量', width: 12 }
+    ], rows);
+});
+
+app.get('/api/schools/export-legacy', authMiddleware, roleMiddleware('admin'), (req, res) => {
     const schools = readJSON('schools.json');
     const XLSX = require('xlsx');
 
@@ -1015,7 +1075,37 @@ app.get('/api/canteens', authMiddleware, (req, res) => {
     if (req.user.role === 'school' && req.user.schoolId) {
         canteens = canteens.filter(c => c.schoolId === req.user.schoolId);
     }
-    res.json(canteens);
+    sendListResponse(req, res, canteens, ['name', 'code', 'manager', 'phone', 'operationMode', 'status']);
+});
+
+app.get('/api/canteens/export', authMiddleware, (req, res) => {
+    let canteens = readJSON('canteens.json');
+    const schools = readJSON('schools.json');
+    if (req.query.academicYear) canteens = canteens.filter(c => c.academicYear === req.query.academicYear);
+    if (req.user.role === 'school' && req.user.schoolId) canteens = canteens.filter(c => c.schoolId === req.user.schoolId);
+    const rows = applyListQuery(canteens, { ...req.query, page: 1, pageSize: Number.MAX_SAFE_INTEGER }, ['name', 'code', 'manager', 'phone', 'operationMode', 'status']).data
+        .map(c => ({
+            name: c.name || '',
+            code: c.code || '',
+            schoolName: schools.find(s => s.id === c.schoolId)?.name || c.schoolId || '',
+            manager: c.manager || '',
+            phone: c.phone || '',
+            operationMode: c.operationMode || '',
+            foodSafetyStaff: c.foodSafetyStaff || '',
+            status: c.status || '',
+            academicYear: c.academicYear || ''
+        }));
+    exportExcel(res, '食堂信息导出', '食堂信息', [
+        { key: 'name', label: '食堂名称', width: 24 },
+        { key: 'code', label: '食堂代码', width: 16 },
+        { key: 'schoolName', label: '所属学校', width: 26 },
+        { key: 'manager', label: '负责人', width: 12 },
+        { key: 'phone', label: '联系电话', width: 16 },
+        { key: 'operationMode', label: '经营模式', width: 14 },
+        { key: 'foodSafetyStaff', label: '食品安全员', width: 14 },
+        { key: 'status', label: '运营状态', width: 14 },
+        { key: 'academicYear', label: '学年', width: 14 }
+    ], rows);
 });
 
 app.get('/api/canteens/:id', authMiddleware, (req, res) => {
@@ -1203,6 +1293,116 @@ function deleteSupplierCascade(supplierId) {
     return cascade;
 }
 
+const ENTERPRISE_ROLE_TYPES = ['enterprise', 'ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'];
+
+function isEnterpriseUser(user) {
+    return user && ENTERPRISE_ROLE_TYPES.includes(user.role);
+}
+
+function findOwnedEnterpriseRecord(user, records) {
+    if (!isEnterpriseUser(user)) return null;
+    return records.find(r => r.userId === user.id)
+        || records.find(r => r.id === user.id)
+        || records.find(r => r.name && r.name === user.name)
+        || null;
+}
+
+function filterEnterpriseRecordsForUser(records, user) {
+    if (!isEnterpriseUser(user)) return records;
+    const owned = findOwnedEnterpriseRecord(user, records);
+    return owned ? [owned] : [];
+}
+
+function ensureEnterpriseRecordAccess(user, records, id) {
+    const record = records.find(r => r.id === id);
+    if (!record) return { errorStatus: 404, error: 'record not found' };
+    if (isEnterpriseUser(user) && record !== findOwnedEnterpriseRecord(user, records)) {
+        return { errorStatus: 403, error: 'forbidden' };
+    }
+    return { record };
+}
+
+function requireAdminForEnterpriseCreateDelete(req, res) {
+    if (req.user.role !== 'admin') {
+        res.status(403).json({ error: 'forbidden' });
+        return false;
+    }
+    return true;
+}
+
+function getLicenseWarnLevel(validUntil, now = new Date()) {
+    if (!validUntil) return 'green';
+    const endDate = new Date(validUntil);
+    if (Number.isNaN(endDate.getTime())) return 'green';
+    const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
+    if (daysLeft <= 7) return 'red';
+    if (daysLeft <= 30) return 'yellow';
+    return 'green';
+}
+
+function getByPath(obj, key) {
+    return String(obj?.[key] ?? '').toLowerCase();
+}
+
+function applyListQuery(items, query, searchFields = []) {
+    let result = [...items];
+    const search = String(query.search || '').trim().toLowerCase();
+    if (search && searchFields.length) {
+        result = result.filter(item => searchFields.some(field => getByPath(item, field).includes(search)));
+    }
+
+    const sortBy = query.sortBy;
+    if (sortBy) {
+        const sortOrder = String(query.sortOrder || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+        result.sort((a, b) => getByPath(a, sortBy).localeCompare(getByPath(b, sortBy), 'zh-CN', { numeric: true }) * sortOrder);
+    }
+
+    const total = result.length;
+    const page = Math.max(parseInt(query.page, 10) || 1, 1);
+    const pageSize = Math.max(parseInt(query.pageSize, 10) || total || 1, 1);
+    const start = (page - 1) * pageSize;
+    return { data: result.slice(start, start + pageSize), total, page, pageSize };
+}
+
+function sendListResponse(req, res, items, searchFields = []) {
+    const queried = applyListQuery(items, req.query, searchFields);
+    if (req.query.page || req.query.pageSize || req.query.search || req.query.sortBy) {
+        return res.json(queried);
+    }
+    res.json(queried.data);
+}
+
+function exportExcel(res, filenamePrefix, sheetName, headers, rows) {
+    const XLSX = require('xlsx');
+    const data = [headers.map(h => h.label), ...rows.map(row => headers.map(h => row[h.key] ?? ''))];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = headers.map(h => ({ wch: h.width || 16 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `${filenamePrefix}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+}
+
+function exportSuppliers(req, res, filenamePrefix, sheetName, items) {
+    const rows = applyListQuery(items, { ...req.query, page: 1, pageSize: Number.MAX_SAFE_INTEGER }, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']).data;
+    exportExcel(res, filenamePrefix, sheetName, [
+        { key: 'name', label: '企业名称', width: 28 },
+        { key: 'code', label: '统一社会信用代码', width: 22 },
+        { key: 'companyType', label: '企业类型', width: 18 },
+        { key: 'region', label: '所在区域', width: 18 },
+        { key: 'address', label: '详细地址', width: 32 },
+        { key: 'legalPerson', label: '法定代表人', width: 14 },
+        { key: 'phone', label: '联系电话', width: 16 },
+        { key: 'capital', label: '注册资本', width: 12 },
+        { key: 'establishDate', label: '成立日期', width: 14 },
+        { key: 'businessScope', label: '经营范围', width: 36 },
+        { key: 'academicYear', label: '学年', width: 14 }
+    ], rows);
+}
+
 // --- Ingredient Suppliers ---
 app.get('/api/ingredient-suppliers', authMiddleware, (req, res) => {
     let suppliers = readJSON('ingredientSuppliers.json');
@@ -1210,17 +1410,28 @@ app.get('/api/ingredient-suppliers', authMiddleware, (req, res) => {
     if (academicYear) {
         suppliers = suppliers.filter(s => s.academicYear && s.academicYear === academicYear);
     }
-    res.json(suppliers);
+    suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    sendListResponse(req, res, suppliers, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
+});
+
+app.get('/api/ingredient-suppliers/export', authMiddleware, (req, res) => {
+    let suppliers = readJSON('ingredientSuppliers.json');
+    if (req.query.academicYear) suppliers = suppliers.filter(s => s.academicYear && s.academicYear === req.query.academicYear);
+    suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    exportSuppliers(req, res, '食材供应商导出', '食材供应商', suppliers);
 });
 
 app.get('/api/ingredient-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('ingredientSuppliers.json');
     const supplier = suppliers.find(s => s.id === req.params.id);
+    const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (!supplier) return res.status(404).json({ error: '供应商不存在' });
     res.json(supplier);
 });
 
 app.post('/api/ingredient-suppliers', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const suppliers = readJSON('ingredientSuppliers.json');
     const config = readJSON('systemConfig.json');
     const supplier = {
@@ -1238,6 +1449,8 @@ app.post('/api/ingredient-suppliers', authMiddleware, (req, res) => {
 app.put('/api/ingredient-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('ingredientSuppliers.json');
     const idx = suppliers.findIndex(s => s.id === req.params.id);
+    const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (idx === -1) return res.status(404).json({ error: '供应商不存在' });
     suppliers[idx] = { ...suppliers[idx], ...req.body, updatedAt: new Date().toISOString() };
     writeJSON('ingredientSuppliers.json', suppliers);
@@ -1245,6 +1458,7 @@ app.put('/api/ingredient-suppliers/:id', authMiddleware, (req, res) => {
 });
 
 app.delete('/api/ingredient-suppliers/:id', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const supplierId = req.params.id;
     let suppliers = readJSON('ingredientSuppliers.json');
     if (!suppliers.find(s => s.id === supplierId)) return res.status(404).json({ error: '供应商不存在' });
@@ -1261,17 +1475,28 @@ app.get('/api/catering-companies', authMiddleware, (req, res) => {
     if (academicYear) {
         companies = companies.filter(c => c.academicYear && c.academicYear === academicYear);
     }
-    res.json(companies);
+    companies = filterEnterpriseRecordsForUser(companies, req.user);
+    sendListResponse(req, res, companies, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
+});
+
+app.get('/api/catering-companies/export', authMiddleware, (req, res) => {
+    let companies = readJSON('cateringCompanies.json');
+    if (req.query.academicYear) companies = companies.filter(c => c.academicYear && c.academicYear === req.query.academicYear);
+    companies = filterEnterpriseRecordsForUser(companies, req.user);
+    exportSuppliers(req, res, '校外供餐企业导出', '校外供餐企业', companies);
 });
 
 app.get('/api/catering-companies/:id', authMiddleware, (req, res) => {
     const companies = readJSON('cateringCompanies.json');
     const company = companies.find(c => c.id === req.params.id);
+    const access = ensureEnterpriseRecordAccess(req.user, companies, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (!company) return res.status(404).json({ error: '企业不存在' });
     res.json(company);
 });
 
 app.post('/api/catering-companies', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const companies = readJSON('cateringCompanies.json');
     const config = readJSON('systemConfig.json');
     const company = {
@@ -1289,6 +1514,8 @@ app.post('/api/catering-companies', authMiddleware, (req, res) => {
 app.put('/api/catering-companies/:id', authMiddleware, (req, res) => {
     const companies = readJSON('cateringCompanies.json');
     const idx = companies.findIndex(c => c.id === req.params.id);
+    const access = ensureEnterpriseRecordAccess(req.user, companies, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (idx === -1) return res.status(404).json({ error: '企业不存在' });
     companies[idx] = { ...companies[idx], ...req.body, updatedAt: new Date().toISOString() };
     writeJSON('cateringCompanies.json', companies);
@@ -1296,6 +1523,7 @@ app.put('/api/catering-companies/:id', authMiddleware, (req, res) => {
 });
 
 app.delete('/api/catering-companies/:id', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const supplierId = req.params.id;
     let companies = readJSON('cateringCompanies.json');
     if (!companies.find(c => c.id === supplierId)) return res.status(404).json({ error: '企业不存在' });
@@ -1312,10 +1540,26 @@ app.get('/api/operation-suppliers', authMiddleware, (req, res) => {
     if (academicYear) {
         suppliers = suppliers.filter(s => s.academicYear && s.academicYear === academicYear);
     }
-    res.json(suppliers);
+    suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    sendListResponse(req, res, suppliers, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
+});
+
+app.get('/api/operation-suppliers/export', authMiddleware, (req, res) => {
+    let suppliers = readJSON('operationSuppliers.json');
+    if (req.query.academicYear) suppliers = suppliers.filter(s => s.academicYear && s.academicYear === req.query.academicYear);
+    suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    exportSuppliers(req, res, '委托经营供应商导出', '委托经营供应商', suppliers);
+});
+
+app.get('/api/operation-suppliers/:id', authMiddleware, (req, res) => {
+    const suppliers = readJSON('operationSuppliers.json');
+    const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
+    res.json(access.record);
 });
 
 app.post('/api/operation-suppliers', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const suppliers = readJSON('operationSuppliers.json');
     const config = readJSON('systemConfig.json');
     const supplier = {
@@ -1332,6 +1576,8 @@ app.post('/api/operation-suppliers', authMiddleware, (req, res) => {
 app.put('/api/operation-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('operationSuppliers.json');
     const idx = suppliers.findIndex(s => s.id === req.params.id);
+    const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (idx === -1) return res.status(404).json({ error: '供应商不存在' });
     suppliers[idx] = { ...suppliers[idx], ...req.body };
     writeJSON('operationSuppliers.json', suppliers);
@@ -1339,6 +1585,7 @@ app.put('/api/operation-suppliers/:id', authMiddleware, (req, res) => {
 });
 
 app.delete('/api/operation-suppliers/:id', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const supplierId = req.params.id;
     let suppliers = readJSON('operationSuppliers.json');
     if (!suppliers.find(s => s.id === supplierId)) return res.status(404).json({ error: '供应商不存在' });
@@ -1355,10 +1602,26 @@ app.get('/api/service-suppliers', authMiddleware, (req, res) => {
     if (academicYear) {
         suppliers = suppliers.filter(s => s.academicYear && s.academicYear === academicYear);
     }
-    res.json(suppliers);
+    suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    sendListResponse(req, res, suppliers, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
+});
+
+app.get('/api/service-suppliers/export', authMiddleware, (req, res) => {
+    let suppliers = readJSON('serviceSuppliers.json');
+    if (req.query.academicYear) suppliers = suppliers.filter(s => s.academicYear && s.academicYear === req.query.academicYear);
+    suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    exportSuppliers(req, res, '委托服务提供商导出', '委托服务提供商', suppliers);
+});
+
+app.get('/api/service-suppliers/:id', authMiddleware, (req, res) => {
+    const suppliers = readJSON('serviceSuppliers.json');
+    const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
+    res.json(access.record);
 });
 
 app.post('/api/service-suppliers', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const suppliers = readJSON('serviceSuppliers.json');
     const config = readJSON('systemConfig.json');
     const supplier = {
@@ -1372,7 +1635,19 @@ app.post('/api/service-suppliers', authMiddleware, (req, res) => {
     res.json(supplier);
 });
 
+app.put('/api/service-suppliers/:id', authMiddleware, (req, res) => {
+    const suppliers = readJSON('serviceSuppliers.json');
+    const idx = suppliers.findIndex(s => s.id === req.params.id);
+    const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
+    if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
+    if (idx === -1) return res.status(404).json({ error: 'record not found' });
+    suppliers[idx] = { ...suppliers[idx], ...req.body, updatedAt: new Date().toISOString() };
+    writeJSON('serviceSuppliers.json', suppliers);
+    res.json(suppliers[idx]);
+});
+
 app.delete('/api/service-suppliers/:id', authMiddleware, (req, res) => {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
     const supplierId = req.params.id;
     let suppliers = readJSON('serviceSuppliers.json');
     if (!suppliers.find(s => s.id === supplierId)) return res.status(404).json({ error: '供应商不存在' });
@@ -1415,10 +1690,41 @@ app.get('/api/credentials', authMiddleware, (req, res) => {
     if (req.query.ownerType) {
         credentials = credentials.filter(c => c.ownerType === req.query.ownerType);
     }
-    res.json(credentials);
+    sendListResponse(req, res, credentials, ['name', 'ownerName', 'ownerType', 'type', 'licenseNo']);
 });
 
 // 学校用户查看合同关联企业的证照
+app.get('/api/credentials/export', authMiddleware, (req, res) => {
+    const enterpriseLicenses = readJSON('enterpriseLicenses.json');
+    let credentials = readJSON('credentials.json');
+    const convertedLicenses = enterpriseLicenses.map(el => ({
+        id: el.id,
+        name: el.name,
+        ownerId: el.enterpriseId,
+        ownerName: el.enterpriseName || el.name,
+        ownerType: el.enterpriseType || '企业',
+        type: el.type,
+        licenseNo: el.licenseNo,
+        validFrom: el.validFrom,
+        validUntil: el.validUntil
+    }));
+    credentials = [...convertedLicenses, ...credentials];
+    if (req.query.ownerId) credentials = credentials.filter(c => c.ownerId === req.query.ownerId);
+    if (req.query.ownerType) credentials = credentials.filter(c => c.ownerType === req.query.ownerType);
+    const rows = applyListQuery(credentials, { ...req.query, page: 1, pageSize: Number.MAX_SAFE_INTEGER }, ['name', 'ownerName', 'ownerType', 'type', 'licenseNo']).data
+        .map(c => ({ ...c, warnLevel: getLicenseWarnLevel(c.validUntil) }));
+    exportExcel(res, '证照信息导出', '证照信息', [
+        { key: 'name', label: '证照名称', width: 24 },
+        { key: 'ownerName', label: '所属主体', width: 28 },
+        { key: 'ownerType', label: '主体类型', width: 18 },
+        { key: 'type', label: '证照类型', width: 18 },
+        { key: 'licenseNo', label: '证照编号', width: 24 },
+        { key: 'validFrom', label: '有效期起', width: 14 },
+        { key: 'validUntil', label: '有效期止', width: 14 },
+        { key: 'warnLevel', label: '预警状态', width: 12 }
+    ], rows);
+});
+
 app.get('/api/school/enterprise-licenses', authMiddleware, (req, res) => {
     const user = req.user;
 
@@ -1525,6 +1831,7 @@ app.get('/api/warnings/stats', authMiddleware, (req, res) => {
 
     let yellowCount = 0;
     let redCount = 0;
+    let greenCount = 0;
     let expiredList = [];
     let expiringList = [];
 
@@ -1555,19 +1862,20 @@ app.get('/api/warnings/stats', authMiddleware, (req, res) => {
         // 如果是学校用户，过滤只显示合同关联企业的证照
         if (user.role === 'school' && !validEnterpriseNames.includes(cred.name)) return;
 
-        const endDate = new Date(cred.validUntil);
-        const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
-
-        if (daysLeft <= 0) {
+        const warnLevel = getLicenseWarnLevel(cred.validUntil, now);
+        if (warnLevel === 'red') {
             redCount++;
             expiredList.push(cred);
-        } else if (daysLeft <= 30) {
+        } else if (warnLevel === 'yellow') {
             yellowCount++;
             expiringList.push(cred);
+        } else {
+            greenCount++;
         }
     });
 
     res.json({
+        greenCount,
         yellowCount,
         redCount,
         expiredList,
@@ -1591,6 +1899,7 @@ app.get('/api/dashboard/stats', authMiddleware, (req, res) => {
     let operationSuppliers = readJSON('operationSuppliers.json');
     let serviceSuppliers = readJSON('serviceSuppliers.json');
     const credentials = readJSON('credentials.json');
+    const enterpriseLicenses = readJSON('enterpriseLicenses.json');
 
     if (academicYear) {
         schools = schools.filter(s => s.academicYear && s.academicYear === academicYear);
@@ -1604,12 +1913,13 @@ app.get('/api/dashboard/stats', authMiddleware, (req, res) => {
     const now = new Date();
     let yellowCount = 0;
     let redCount = 0;
+    let greenCount = 0;
 
-    credentials.forEach(cred => {
-        const endDate = new Date(cred.validUntil);
-        const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
-        if (daysLeft <= 0) redCount++;
-        else if (daysLeft <= 30) yellowCount++;
+    [...credentials, ...enterpriseLicenses].forEach(cred => {
+        const warnLevel = getLicenseWarnLevel(cred.validUntil, now);
+        if (warnLevel === 'red') redCount++;
+        else if (warnLevel === 'yellow') yellowCount++;
+        else greenCount++;
     });
 
     // 供餐类型统计
@@ -1633,6 +1943,7 @@ app.get('/api/dashboard/stats', authMiddleware, (req, res) => {
         totalCateringCompanies: cateringCompanies.length,
         totalOperationSuppliers: operationSuppliers.length,
         totalServiceSuppliers: serviceSuppliers.length,
+        greenWarningCount: greenCount,
         yellowWarningCount: yellowCount,
         redWarningCount: redCount
     });

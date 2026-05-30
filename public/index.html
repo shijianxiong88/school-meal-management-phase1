@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>全市学校供餐管理系统</title>
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+    <script src="/vendor/react.development.js"></script>
+    <script src="/vendor/react-dom.development.js"></script>
+    <script src="/vendor/babel.min.js"></script>
+    <script src="/vendor/tesseract.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f0f2f5; }
@@ -36,6 +36,10 @@
         .btn-login:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102,126,234,0.35); }
         .login-error { color: #e74c3c; font-size: 13px; margin-top: 8px; text-align: center; display: none; }
         .login-error.show { display: block; }
+        .login-success { color: #27ae60; font-size: 13px; margin-top: 8px; text-align: center; display: none; }
+        .login-success.show { display: block; }
+        .login-link { margin-top: 14px; text-align: center; color: #667eea; font-size: 13px; cursor: pointer; user-select: none; }
+        .login-link:hover { text-decoration: underline; }
 
         /* Layout */
         .app-layout { display: flex; min-height: 100vh; }
@@ -182,6 +186,15 @@
         .filter-bar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
         .search-input { padding: 9px 14px; border: 2px solid #e8ecf0; border-radius: 8px; font-size: 13px; outline: none; min-width: 220px; font-family: inherit; }
         .search-input:focus { border-color: #667eea; }
+        .user-group-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+        .user-group-tab { padding: 6px 14px; border: 2px solid #e2e8f0; border-radius: 8px; background: white; font-size: 13px; cursor: pointer; color: #475569; transition: all 0.2s; font-family: inherit; }
+        .user-group-tab:hover { border-color: #667eea; color: #667eea; }
+        .user-group-tab.active { background: #667eea; border-color: #667eea; color: white; font-weight: 500; }
+        .user-sub-tabs { display: flex; gap: 6px; margin-bottom: 10px; margin-left: 12px; flex-wrap: wrap; }
+        .user-sub-tab { padding: 5px 12px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; font-size: 12px; cursor: pointer; color: #475569; transition: all 0.15s; font-family: inherit; }
+        .user-sub-tab:hover { background: #eef2ff; border-color: #667eea; color: #667eea; }
+        .user-group-header { background: #f1f5f9; color: #1e293b; font-weight: 600; font-size: 13px; padding: 10px 14px; }
+        .user-sub-group-header { background: #f8fafc; color: #475569; font-weight: 500; font-size: 12px; padding: 8px 14px 8px 28px; }
         select.filter-select { padding: 9px 14px; border: 2px solid #e8ecf0; border-radius: 8px; font-size: 13px; outline: none; font-family: inherit; background: white; }
 
         /* Empty state */
@@ -552,14 +565,54 @@
             const [username, setUsername] = useState('');
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
+            const [success, setSuccess] = useState('');
+            const [forgotMode, setForgotMode] = useState(false);
+            const [verifyName, setVerifyName] = useState('');
+            const [newPassword, setNewPassword] = useState('');
             const { login, loading } = useAuth();
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 setError('');
+                setSuccess('');
                 if (!username || !password) { setError('请输入用户名和密码'); return; }
                 const result = await login(username, password, role);
                 if (!result.success) setError(result.error);
+            };
+
+            const handleForgotPassword = async (e) => {
+                e.preventDefault();
+                setError('');
+                setSuccess('');
+                if (!username || !verifyName || !newPassword) {
+                    setError('请填写身份、用户名、单位/姓名和新密码');
+                    return;
+                }
+                try {
+                    const res = await fetch('/api/auth/forgot-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, role, name: verifyName, newPassword })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '密码重置失败');
+                    setSuccess(data.message || '密码已重置，请使用新密码登录');
+                    setPassword('');
+                    setNewPassword('');
+                    setVerifyName('');
+                    setForgotMode(false);
+                } catch (e) {
+                    setError(e.message);
+                }
+            };
+
+            const toggleForgotMode = () => {
+                setForgotMode(!forgotMode);
+                setError('');
+                setSuccess('');
+                setPassword('');
+                setNewPassword('');
+                setVerifyName('');
             };
 
             return (
@@ -576,26 +629,43 @@
                     </div>
                     <div className="login-right">
                         <div className="login-card">
-                            <h2>用户登录</h2>
+                            <h2>{forgotMode ? '找回密码' : '用户登录'}</h2>
                             <p className="subtitle">请选择您的身份并登录系统</p>
                             <div className="role-tabs">
                                 <button className={`role-tab ${role === 'admin' ? 'active' : ''}`} onClick={() => setRole('admin')}>市级管理</button>
                                 <button className={`role-tab ${role === 'school' ? 'active' : ''}`} onClick={() => setRole('school')}>学校</button>
                                 <button className={`role-tab ${role === 'enterprise' ? 'active' : ''}`} onClick={() => setRole('enterprise')}>企业</button>
                             </div>
-                            <form onSubmit={handleSubmit}>
+                            <form onSubmit={forgotMode ? handleForgotPassword : handleSubmit}>
                                 <div className="form-group">
                                     <label>用户名</label>
                                     <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="请输入用户名" />
                                 </div>
-                                <div className="form-group">
-                                    <label>密码</label>
-                                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="请输入密码" />
-                                </div>
+                                {forgotMode ? (
+                                    <>
+                                        <div className="form-group">
+                                            <label>单位/姓名</label>
+                                            <input type="text" value={verifyName} onChange={e => setVerifyName(e.target.value)} placeholder="请输入账号对应的单位或姓名" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>新密码</label>
+                                            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="请输入不少于 6 位的新密码" />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="form-group">
+                                        <label>密码</label>
+                                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="请输入密码" />
+                                    </div>
+                                )}
                                 <button type="submit" className="btn-login" disabled={loading}>
-                                    {loading ? '登录中...' : '登 录'}
+                                    {forgotMode ? '重置密码' : (loading ? '登录中...' : '登 录')}
                                 </button>
                                 <p className={`login-error ${error ? 'show' : ''}`}>{error || ''}</p>
+                                <p className={`login-success ${success ? 'show' : ''}`}>{success || ''}</p>
+                                <div className="login-link" onClick={toggleForgotMode}>
+                                    {forgotMode ? '返回登录' : '忘记密码？'}
+                                </div>
                             </form>
                         </div>
                     </div>
@@ -1674,7 +1744,7 @@
             const getCredentialStatus = (cred) => {
                 if (!cred.validUntil) return 'valid';
                 const daysLeft = Math.ceil((new Date(cred.validUntil) - new Date()) / (1000 * 60 * 60 * 24));
-                if (daysLeft <= 0) return 'red';
+                if (daysLeft <= 7) return 'red';
                 if (daysLeft <= 30) return 'yellow';
                 return 'green';
             };
@@ -3337,6 +3407,8 @@
         // ============ Users Management Page ============
         function UsersPage() {
             const [users, setUsers] = useState([]);
+            const [schools, setSchools] = useState([]);
+            const [canteens, setCanteens] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showModal, setShowModal] = useState(false);
             const [editUser, setEditUser] = useState(null);
@@ -3345,16 +3417,23 @@
             const [toast, setToast] = useState(null);
             const [search, setSearch] = useState('');
             const { user: currentUser } = useAuth();
+            const [activeTab, setActiveTab] = useState('all');
+            const [expandedGroups, setExpandedGroups] = useState({ enterprise: false, school: false });
 
             const loadData = () => {
                 setLoading(true);
-                apiFetch('/users').then(d => { if (d) { setUsers(d); setLoading(false); } });
+                Promise.all([
+                    apiFetch('/users'),
+                    apiFetch('/schools'),
+                    apiFetch('/canteens')
+                ]).then(([d, s, c]) => {
+                    if (d) setUsers(d);
+                    if (s) setSchools(s);
+                    if (c) setCanteens(c);
+                    setLoading(false);
+                });
             };
             useEffect(() => { loadData(); }, []);
-
-            const filtered = users.filter(u =>
-                !search || u.name?.includes(search) || u.username?.includes(search) || (u.region && u.region.includes(search))
-            );
 
             const handleSave = async (formData) => {
                 try {
@@ -3408,6 +3487,154 @@
                 serviceSupplier: { label: '委托服务提供商', badge: 'badge-green' },
             };
 
+            const userGroups = {
+                admin: { label: '市级用户', roles: ['admin'] },
+                enterprise: {
+                    label: '企业用户',
+                    roles: ['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'],
+                    children: {
+                        ingredientSupplier: '食材供应商',
+                        cateringCompany: '校外供餐企业',
+                        operationSupplier: '委托经营供应商',
+                        serviceSupplier: '委托服务提供商'
+                    }
+                },
+                school: {
+                    label: '学校用户',
+                    roles: ['school'],
+                    children: {
+                        selfCanteen: '自办食堂学校',
+                        delegateCanteen: '委托经营学校',
+                        externalSupply: '校外供餐学校'
+                    }
+                }
+            };
+
+            const getSchoolType = (schoolId) => {
+                const school = schools.find(s => s.id === schoolId);
+                if (!school) return 'unknown';
+                const schoolCanteens = canteens.filter(c => c.schoolId === schoolId && c.academicYear === '2025-2026');
+                const hasExternal = (school.供餐类型 || []).includes('校外供餐');
+                const selfOp = schoolCanteens.some(c => c.operationMode === '自营');
+                const delegateOp = schoolCanteens.some(c => c.operationMode === '委托经营');
+                if (hasExternal) return 'externalSupply';
+                if (delegateOp) return 'delegateCanteen';
+                if (selfOp) return 'selfCanteen';
+                return 'unknown';
+            };
+
+            const toggleGroup = (key) => {
+                setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+            };
+
+            const filtered = users.filter(u =>
+                !search || u.name?.includes(search) || u.username?.includes(search) || (u.region && u.region.includes(search))
+            );
+
+            const getUserGroup = (user) => {
+                if (user.role === 'admin') return 'admin';
+                if (['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(user.role)) return 'enterprise';
+                if (user.role === 'school') return 'school';
+                return 'other';
+            };
+
+            const getSubGroup = (user) => {
+                if (user.role === 'admin') return 'admin';
+                if (['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(user.role)) return user.role;
+                if (user.role === 'school') return getSchoolType(user.schoolId);
+                return 'other';
+            };
+
+            const renderUsersByGroup = () => {
+                if (loading) return <tr><td colSpan="6" style={{textAlign:'center',color:'#999',padding:'40px'}}>加载中...</td></tr>;
+
+                const isSubTab = ['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier', 'selfCanteen', 'delegateCanteen', 'externalSupply'].includes(activeTab);
+                const parentTab = isSubTab
+                    ? (['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(activeTab) ? 'enterprise' : 'school')
+                    : activeTab;
+
+                let usersToRender = filtered;
+                if (parentTab === 'admin') usersToRender = filtered.filter(u => u.role === 'admin');
+                else if (parentTab === 'enterprise') {
+                    const targetRole = isSubTab ? activeTab : null;
+                    usersToRender = filtered.filter(u => ['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(u.role));
+                    if (targetRole) usersToRender = usersToRender.filter(u => u.role === targetRole);
+                } else if (parentTab === 'school') {
+                    const targetType = isSubTab ? activeTab : null;
+                    usersToRender = filtered.filter(u => u.role === 'school');
+                    if (targetType) usersToRender = usersToRender.filter(u => getSchoolType(u.schoolId) === targetType);
+                }
+
+                if (usersToRender.length === 0) return <tr><td colSpan="6" style={{textAlign:'center',color:'#999',padding:'40px'}}>暂无数据</td></tr>;
+
+                if (parentTab === 'all') {
+                    const adminUsers = usersToRender.filter(u => u.role === 'admin');
+                    const entUsers = usersToRender.filter(u => ['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(u.role));
+                    const schUsers = usersToRender.filter(u => u.role === 'school');
+
+                    const rows = [];
+                    if (adminUsers.length > 0) {
+                        rows.push(<tr key="group-admin-header"><td colSpan="6" className="user-group-header">市级用户</td></tr>);
+                        adminUsers.forEach(u => rows.push(renderUserRow(u)));
+                    }
+
+                    const entSubGroups = ['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'];
+                    const entGroups = {};
+                    entSubGroups.forEach(sg => { entGroups[sg] = entUsers.filter(u => u.role === sg); });
+                    const hasEnt = Object.values(entGroups).some(g => g.length > 0);
+                    if (hasEnt) {
+                        rows.push(<tr key="group-enterprise-header"><td colSpan="6" className="user-group-header">企业用户</td></tr>);
+                        entSubGroups.forEach(sg => {
+                            if (entGroups[sg].length > 0) {
+                                rows.push(<tr key={`group-ent-${sg}`}><td colSpan="6" className="user-sub-group-header">{userGroups.enterprise.children[sg]}</td></tr>);
+                                entGroups[sg].forEach(u => rows.push(renderUserRow(u)));
+                            }
+                        });
+                    }
+
+                    const schSubGroups = ['selfCanteen', 'delegateCanteen', 'externalSupply'];
+                    const schGroups = {};
+                    schSubGroups.forEach(sg => { schGroups[sg] = schUsers.filter(u => getSchoolType(u.schoolId) === sg); });
+                    const hasSch = Object.values(schGroups).some(g => g.length > 0);
+                    if (hasSch) {
+                        rows.push(<tr key="group-school-header"><td colSpan="6" className="user-group-header">学校用户</td></tr>);
+                        schSubGroups.forEach(sg => {
+                            if (schGroups[sg].length > 0) {
+                                rows.push(<tr key={`group-sch-${sg}`}><td colSpan="6" className="user-sub-group-header">{userGroups.school.children[sg]}</td></tr>);
+                                schGroups[sg].forEach(u => rows.push(renderUserRow(u)));
+                            }
+                        });
+                    }
+                    return rows;
+                }
+
+                return usersToRender.map(u => renderUserRow(u));
+            };
+
+            const renderUserRow = (u) => (
+                <tr key={u.id}>
+                    <td>{u.username}</td>
+                    <td>{u.name}</td>
+                    <td>
+                        <span className={`badge ${roleLabels[u.role]?.badge || 'badge-gray'}`}>
+                            {roleLabels[u.role]?.label || u.role}
+                        </span>
+                    </td>
+                    <td>{u.region || '-'}</td>
+                    <td>{u.createdAt ? new Date(u.createdAt).toLocaleString('zh-CN') : '-'}</td>
+                    <td>
+                        <div className="btn-group">
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setEditUser(u); setShowModal(true); }}>查看</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setEditUser(u); setShowModal(true); setUserMode('edit'); }}>编辑</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => handleResetPassword(u.id)}>重置密码</button>
+                            {u.role !== 'admin' && (
+                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u.id)}>删除</button>
+                            )}
+                        </div>
+                    </td>
+                </tr>
+            );
+
             return (
                 <div>
                     <div className="page-header">
@@ -3425,6 +3652,39 @@
                             <div className="filter-bar">
                                 <input className="search-input" placeholder="搜索用户名/名称/区域..." value={search} onChange={e => setSearch(e.target.value)} />
                             </div>
+                            <div className="user-group-tabs">
+                                <button className={`user-group-tab ${activeTab === 'all' ? 'active' : ''}`} onClick={() => setActiveTab('all')}>全部</button>
+                                <button className={`user-group-tab ${activeTab === 'admin' ? 'active' : ''}`} onClick={() => setActiveTab('admin')}>市级用户</button>
+                                <button className={`user-group-tab ${activeTab === 'enterprise' ? 'active' : ''}`} onClick={() => setActiveTab('enterprise')}>
+                                    企业用户 {expandedGroups.enterprise ? '▲' : '▼'}
+                                </button>
+                                {activeTab === 'enterprise' && expandedGroups.enterprise && (
+                                    <div className="user-sub-tabs">
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('enterprise')}>全部企业</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('ingredientSupplier')}>食材供应商</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('cateringCompany')}>校外供餐企业</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('operationSupplier')}>委托经营供应商</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('serviceSupplier')}>委托服务提供商</button>
+                                    </div>
+                                )}
+                                {activeTab !== 'enterprise' && (
+                                    <button className={`user-group-tab`} onClick={() => { setActiveTab('enterprise'); toggleGroup('enterprise'); }} style={{display:'none'}}>企业用户 ▼</button>
+                                )}
+                                <button className={`user-group-tab ${activeTab === 'school' ? 'active' : ''}`} onClick={() => setActiveTab('school')}>
+                                    学校用户 {expandedGroups.school ? '▲' : '▼'}
+                                </button>
+                                {activeTab === 'school' && expandedGroups.school && (
+                                    <div className="user-sub-tabs">
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('school')}>全部学校</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('selfCanteen')}>自办食堂学校</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('delegateCanteen')}>委托经营学校</button>
+                                        <button className={`user-sub-tab`} onClick={() => setActiveTab('externalSupply')}>校外供餐学校</button>
+                                    </div>
+                                )}
+                                {activeTab !== 'school' && (
+                                    <button className={`user-group-tab`} onClick={() => { setActiveTab('school'); toggleGroup('school'); }} style={{display:'none'}}>学校用户 ▼</button>
+                                )}
+                            </div>
                             <div className="table-wrap">
                                 <table>
                                     <thead>
@@ -3438,32 +3698,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filtered.length === 0 && (
-                                            <tr><td colSpan="6" style={{textAlign:'center',color:'#999',padding:'40px'}}>暂无数据</td></tr>
-                                        )}
-                                        {filtered.map(u => (
-                                            <tr key={u.id}>
-                                                <td>{u.username}</td>
-                                                <td>{u.name}</td>
-                                                <td>
-                                                    <span className={`badge ${roleLabels[u.role]?.badge || 'badge-gray'}`}>
-                                                        {roleLabels[u.role]?.label || u.role}
-                                                    </span>
-                                                </td>
-                                                <td>{u.region || '-'}</td>
-                                                <td>{u.createdAt ? new Date(u.createdAt).toLocaleString('zh-CN') : '-'}</td>
-                                                <td>
-                                                    <div className="btn-group">
-                                                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditUser(u); setShowModal(true); }}>查看</button>
-                                                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditUser(u); setShowModal(true); setUserMode('edit'); }}>编辑</button>
-                                                        <button className="btn btn-secondary btn-sm" onClick={() => handleResetPassword(u.id)}>重置密码</button>
-                                                        {u.role !== 'admin' && (
-                                                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u.id)}>删除</button>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {renderUsersByGroup()}
                                     </tbody>
                                 </table>
                             </div>
@@ -3691,7 +3926,7 @@
             const getCredentialStatus = (cred) => {
                 if (!cred.validUntil) return 'valid';
                 const daysLeft = Math.ceil((new Date(cred.validUntil) - new Date()) / (1000 * 60 * 60 * 24));
-                if (daysLeft <= 0) return 'red';
+                if (daysLeft <= 7) return 'red';
                 if (daysLeft <= 30) return 'yellow';
                 return 'green';
             };
@@ -3766,7 +4001,7 @@
             const getCredentialStatus = (cred) => {
                 if (!cred.validUntil) return 'valid';
                 const daysLeft = Math.ceil((new Date(cred.validUntil) - new Date()) / (1000 * 60 * 60 * 24));
-                if (daysLeft <= 0) return 'red';
+                if (daysLeft <= 7) return 'red';
                 if (daysLeft <= 30) return 'yellow';
                 return 'green';
             };

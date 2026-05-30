@@ -2,7 +2,7 @@
   {
     "id": "admin001",
     "username": "admin",
-    "password": "$2a$10$K.0HhnH0E1yG0.qN0KXxJ.4xM8.JxQHKZ9F5YxD0Z1K2H3J4I5G6",
+    "password": "$2a$10$M.0/QL.u7F6rVytEID20G.8sJIkWuWSmVxtWO2cqk46PKz1S6ubpe",
     "role": "admin",
     "name": "市级管理员",
     "region": "全市"
@@ -15,15 +15,6 @@
     "role": "enterprise",
     "region": "福建省福州市",
     "createdAt": "2026-04-27T16:00:01.043Z"
-  },
-  {
-    "id": "user_1777305601126",
-    "username": "catering001",
-    "password": "$2a$10$HaW3YemEWQ0i7kUvGqnVHeN0./ff0M0omZ546Bp20/EXZyfx4iWnu",
-    "name": "厦门美海乐餐饮配送有限公司",
-    "role": "enterprise",
-    "region": "福建省厦门市",
-    "createdAt": "2026-04-27T16:00:01.126Z"
   },
   {
     "id": "user_1777305601210",
@@ -170,54 +161,54 @@
     "createdAt": "2026-05-05T12:32:08.077Z"
   },
   {
-    "id": "user_1777984328139",
-    "username": "cat001",
-    "password": "$2a$10$As0i9EGaE1XC2B1Z9mZqJe19wTyyHtZ5jSA9BtRzQ8TdA0GTo9Jpa",
-    "name": "厦门美海乐餐饮配送有限公司",
-    "role": "enterprise",
+    "id": "user_1777984328440",
+    "username": "svc001",
+    "password": "$2a$10$9QODOk/EwSruJ28T9AspkOcc9X2ydnkQ8aWuPfoLuG.iXv4Me5cDG",
+    "name": "泉州明厨亮灶技术服务有限公司",
+    "role": "serviceSupplier",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-05T12:32:08.440Z"
+  },
+  {
+    "id": "user_1777984328502",
+    "username": "svc002",
+    "password": "$2a$10$9QODOk/EwSruJ28T9AspkOcc9X2ydnkQ8aWuPfoLuG.iXv4Me5cDG",
+    "name": "晋江食安检测技术有限公司",
+    "role": "serviceSupplier",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-05T12:32:08.502Z"
+  },
+  {
+    "id": "user_1777984328564",
+    "username": "svc003",
+    "password": "$2a$10$9QODOk/EwSruJ28T9AspkOcc9X2ydnkQ8aWuPfoLuG.iXv4Me5cDG",
+    "name": "厦门洁净有害生物防治有限公司",
+    "role": "serviceSupplier",
     "region": "福建省厦门市",
-    "createdAt": "2026-05-05T12:32:08.139Z"
+    "createdAt": "2026-05-05T12:32:08.564Z"
   },
   {
-    "id": "user_1777984328201",
-    "username": "cat002",
-    "password": "$2a$10$i1HA0fwH5ENkXISYRtH9mOVX5pDNPC92Sd7ImoCZ.vHLx0qA9TiSi",
-    "name": "福州食惠餐饮配送有限公司",
-    "role": "enterprise",
+    "id": "user_1777984328626",
+    "username": "svc004",
+    "password": "$2a$10$9QODOk/EwSruJ28T9AspkOcc9X2ydnkQ8aWuPfoLuG.iXv4Me5cDG",
+    "name": "福州安膳培训咨询有限公司",
+    "role": "serviceSupplier",
     "region": "福建省福州市",
-    "createdAt": "2026-05-05T12:32:08.201Z"
+    "createdAt": "2026-05-05T12:32:08.626Z"
   },
   {
-    "id": "user_1777984328263",
-    "username": "cat003",
-    "password": "$2a$10$FPtJxC1/0ViiPM5Z2e0OoeD3glPK04GlIuQ8Bqh6YkE.e/NXQD/am",
-    "name": "泉州御膳坊餐饮配送有限公司",
-    "role": "enterprise",
-    "region": "福建省泉州市",
-    "createdAt": "2026-05-05T12:32:08.263Z"
-  },
-  {
-    "id": "user_1777984328325",
-    "username": "cat004",
-    "password": "$2a$10$76xECsWeN4LX3LB5db/1eOGUlfcJ7bjv.puP/qEuMirTfgfWWaJlK",
-    "name": "漳州鑫鼎餐饮配送有限公司",
-    "role": "enterprise",
+    "id": "user_1777984328688",
+    "username": "svc005",
+    "password": "$2a$10$9QODOk/EwSruJ28T9AspkOcc9X2ydnkQ8aWuPfoLuG.iXv4Me5cDG",
+    "name": "漳州冷链设备维保有限公司",
+    "role": "serviceSupplier",
     "region": "福建省漳州市",
-    "createdAt": "2026-05-05T12:32:08.325Z"
-  },
-  {
-    "id": "user_1777984328387",
-    "username": "cat005",
-    "password": "$2a$10$ZfbEnnI5s28XSZzEmSbybez66LoPjLD7by.VuyVTvw/1J06APYiF6",
-    "name": "晋江膳百味餐饮配送有限公司",
-    "role": "enterprise",
-    "region": "福建省泉州市",
-    "createdAt": "2026-05-05T12:32:08.387Z"
+    "createdAt": "2026-05-05T12:32:08.688Z"
   },
   {
     "id": "user_1777984920930",
     "username": "school101",
-    "password": "$2a$10$M4E0aM0wp8PjBzHMkN2HIeQVLDacWj5Qhv3q99EgSvJaT7e/7QGq6",
+    "password": "$2a$10$lm5rfZG4wIaoyzPA/Z.T6.aZBcYQBkdCf6497RnFP60sj7vIhbHgS",
     "name": "晋江市第一中学",
     "role": "school",
     "region": "青阳街道",
@@ -227,7 +218,7 @@
   {
     "id": "user_1777984920995",
     "username": "school102",
-    "password": "$2a$10$f9FTnwo3j.Qjc.XY7ZIaZuswRQlkXkYZEJ5CMQ8v2vud4DvDl.3pK",
+    "password": "$2a$10$t5pn9nXTUsGzDpTJ2RgCJeFtcU27KOpGg73vt2Vr9ggRIiSU6Dahy",
     "name": "晋江市第二中学",
     "role": "school",
     "region": "梅岭街道",
@@ -237,7 +228,7 @@
   {
     "id": "user_1777984921059",
     "username": "school103",
-    "password": "$2a$10$CojNmoqPpIi6ItPSkRbjV.8LPcUV.YVl3jAXzOTjOt4cDjjWvjVVe",
+    "password": "$2a$10$hlvIVDs/ZF0KXlgGK2uAi.umoWemWqJP8Vwo9M1u.ynTB0fQkgRZK",
     "name": "晋江市第三小学",
     "role": "school",
     "region": "西园街道",
@@ -247,7 +238,7 @@
   {
     "id": "user_1777984921122",
     "username": "school104",
-    "password": "$2a$10$n0c5Bg0DXZjkvsTzYczjD.k3Z5IpZwuuqV6ZwqWChNKBeWkdQ3ZbS",
+    "password": "$2a$10$zk82cETLYK9rQOID02MmB.uf..y5LPvwNizd0yIYXCDkJr8FynLwq",
     "name": "晋江市第四小学",
     "role": "school",
     "region": "罗山街道",
@@ -257,7 +248,7 @@
   {
     "id": "user_1777984921185",
     "username": "school105",
-    "password": "$2a$10$YKCC40r8/tL42UMGgF7hcO.QB4JK2GTyE95vp9AXzvbW3oUmrjE62",
+    "password": "$2a$10$W7xWqga.egsys6EPzsx/3OdLfsaYmNMCcR9hTp4c3vnVupEncsAz.",
     "name": "晋江市第五中学",
     "role": "school",
     "region": "灵源街道",
@@ -267,7 +258,7 @@
   {
     "id": "user_1777984921249",
     "username": "school106",
-    "password": "$2a$10$5aczDPq3Q31KHYSt77/9iOu29oOoHjsyTih4X9cIWbFMgS4X6Z0E.",
+    "password": "$2a$10$8qHeR594B.PS5EkxGc0woeQSca2YpLRZ7DmuTzL5cx4FnpFDR4hMO",
     "name": "晋江市第六中学",
     "role": "school",
     "region": "新塘街道",
@@ -277,7 +268,7 @@
   {
     "id": "user_1777984921312",
     "username": "school107",
-    "password": "$2a$10$WDdhWN7LSx0Ek6OYgNJVQeGZAA/1S4ZscyIOQihPh6HRUWdM4L.Re",
+    "password": "$2a$10$gn6msBT2uCzC427GN5Lv.epW8N/dVmCDrZLwKrgrgdKlmsQz.plLu",
     "name": "晋江市第七小学",
     "role": "school",
     "region": "陈埭镇",
@@ -287,7 +278,7 @@
   {
     "id": "user_1777984921376",
     "username": "school108",
-    "password": "$2a$10$DPn.JiTsZ767L2qkbTN97.MQb6D9ZrdGALlpEOkvbC2xaKf0XN/uO",
+    "password": "$2a$10$stRSDoS5v2VYs0/CUHStX.ZtHcj.D.IbHSDsPGvmRfDe3SmjfjyuK",
     "name": "晋江市第八中学",
     "role": "school",
     "region": "池店镇",
@@ -297,7 +288,7 @@
   {
     "id": "user_1777984921439",
     "username": "school109",
-    "password": "$2a$10$1jNxwF4mkb5lrK57yAbjXeIG7y3LkqUDkP3AunxL70XwqDQS3iKrG",
+    "password": "$2a$10$zaPuFl1EyuLUN8UM7i3a7e7m24h6LfkNm39DwRJ.7acEX7CXiftwq",
     "name": "晋江市第九小学",
     "role": "school",
     "region": "东石镇",
@@ -307,11 +298,164 @@
   {
     "id": "user_1777984921502",
     "username": "school110",
-    "password": "$2a$10$hiQYRFOkREk9e6J8mCIXtelNMX9Agf5zfGMPpjp7AVQaYva0Zf1Mq",
+    "password": "$2a$10$Y436mJM2WEEMnR1yxOLtKOwfCLRVZl9mq8xju/NyvANIp0jnueObC",
     "name": "晋江市第十小学",
     "role": "school",
     "region": "永和镇",
     "createdAt": "2026-05-05T12:42:01.502Z",
     "schoolId": "school_1777984075342"
+  },
+  {
+    "id": "user_catering_2025_2027_001",
+    "username": "泉州市松花春水餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市松花春水餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.442Z"
+  },
+  {
+    "id": "user_catering_2025_2027_002",
+    "username": "晋江市晋美餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "晋江市晋美餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.442Z"
+  },
+  {
+    "id": "user_catering_2025_2027_003",
+    "username": "泉州市文粮餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市文粮餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.442Z"
+  },
+  {
+    "id": "user_catering_2025_2027_004",
+    "username": "泉州市亿兴餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市亿兴餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.443Z"
+  },
+  {
+    "id": "user_catering_2025_2027_005",
+    "username": "泉州美尔佳餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州美尔佳餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.443Z"
+  },
+  {
+    "id": "user_catering_2025_2027_006",
+    "username": "泉州市悦泰餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市悦泰餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.443Z"
+  },
+  {
+    "id": "user_catering_2025_2027_007",
+    "username": "食安（泉州市）食品科技有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "食安（泉州市）食品科技有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.444Z"
+  },
+  {
+    "id": "user_catering_2025_2027_008",
+    "username": "南安市源康餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "南安市源康餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.444Z"
+  },
+  {
+    "id": "user_catering_2025_2027_009",
+    "username": "兴客家（泉州）餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "兴客家（泉州）餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.444Z"
+  },
+  {
+    "id": "user_catering_2025_2027_010",
+    "username": "福建中禾食品科技有限责任公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "福建中禾食品科技有限责任公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.444Z"
+  },
+  {
+    "id": "user_catering_2025_2027_011",
+    "username": "泉州市汇禾餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市汇禾餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
+  },
+  {
+    "id": "user_catering_2025_2027_012",
+    "username": "泉州市育禾餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市育禾餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
+  },
+  {
+    "id": "user_catering_2025_2027_013",
+    "username": "泉州市康禾餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市康禾餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
+  },
+  {
+    "id": "user_catering_2025_2027_014",
+    "username": "晋江市新绿健餐饮服务有限责任公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "晋江市新绿健餐饮服务有限责任公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
+  },
+  {
+    "id": "user_catering_2025_2027_015",
+    "username": "泉州市瑞昇餐饮服务有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市瑞昇餐饮服务有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
+  },
+  {
+    "id": "user_catering_2025_2027_016",
+    "username": "福建省迈成餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "福建省迈成餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
+  },
+  {
+    "id": "user_catering_2025_2027_017",
+    "username": "泉州市育芽餐饮管理有限公司",
+    "password": "$2a$10$WMJ25mXH1DTS7EM15RiR8eQz9w1dGHwO60hRS5kwKOGjxhj9vl.Xa",
+    "name": "泉州市育芽餐饮管理有限公司",
+    "role": "cateringCompany",
+    "region": "福建省泉州市晋江市",
+    "createdAt": "2026-05-30T02:57:04.445Z"
   }
 ]
