@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "id": "sel_ann_1780411063233",
+    "announcementNo": "XL-2026-001",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "canteenId": null,
+    "canteenName": "校外供餐",
+    "serviceType": "校外供餐",
+    "title": "test",
+    "content": "test",
+    "requirements": "no",
+    "publishUrl": "http://www.test",
+    "registrationDeadline": "2026-06-02",
+    "publishTime": "2026-06-02T14:37:50.066Z",
+    "status": "已完成",
+    "createdAt": "2026-06-02T14:37:43.233Z",
+    "updatedAt": "2026-06-02T14:43:08.528Z"
+  },
+  {
+    "id": "sel_ann_1780414764788",
+    "announcementNo": "XL-2026-002",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "canteenId": null,
+    "canteenName": "校外供餐",
+    "serviceType": "校外供餐",
+    "title": "2026-2027测试",
+    "content": "ttttt",
+    "publishUrl": "http://www.jj.mm",
+    "registrationDeadline": "2026-06-02",
+    "publishTime": "2026-06-02T15:48:31.109Z",
+    "status": "已完成",
+    "createdAt": "2026-06-02T15:39:24.788Z",
+    "updatedAt": "2026-06-05T16:18:56.128Z"
+  }
+]

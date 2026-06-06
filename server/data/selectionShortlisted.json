@@ -1,1 +1,56 @@
-[]
+[
+  {
+    "id": "sel_short_1780411288554",
+    "announcementId": "sel_ann_1780411063233",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "shortlistedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_010",
+        "enterpriseName": "福建中禾食品科技有限责任公司",
+        "shortlistedAt": "2026-06-02T14:41:28.554Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_002",
+        "enterpriseName": "晋江市晋美餐饮管理有限公司",
+        "shortlistedAt": "2026-06-02T14:41:28.554Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "shortlistedAt": "2026-06-02T14:41:28.554Z"
+      }
+    ],
+    "shortlistTime": "2026-06-02T14:41:28.554Z",
+    "status": "已确定",
+    "createdAt": "2026-06-02T14:41:28.554Z",
+    "updatedAt": "2026-06-02T14:41:28.554Z"
+  },
+  {
+    "id": "sel_short_1780588613499",
+    "announcementId": "sel_ann_1780414764788",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "shortlistedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_006",
+        "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+        "shortlistedAt": "2026-06-04T15:56:53.499Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_005",
+        "enterpriseName": "泉州美尔佳餐饮管理有限公司",
+        "shortlistedAt": "2026-06-04T15:56:53.499Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "shortlistedAt": "2026-06-04T15:56:53.499Z"
+      }
+    ],
+    "shortlistTime": "2026-06-04T15:56:53.499Z",
+    "status": "已确定",
+    "createdAt": "2026-06-04T15:56:53.499Z",
+    "updatedAt": "2026-06-04T15:56:53.499Z"
+  }
+]

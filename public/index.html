@@ -8,6 +8,7 @@
     <script src="/vendor/react-dom.development.js"></script>
     <script src="/vendor/babel.min.js"></script>
     <script src="/vendor/tesseract.min.js"></script>
+    <script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=3d9c04680e4e1a9e62dcda1f1c6a49ec"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f0f2f5; }
@@ -231,6 +232,45 @@
             .login-left .features { display: none; }
             .login-card { width: 100%; }
         }
+        /* Location Map Page */
+        .map-container { width: 100%; height: 500px; border-radius: 8px; margin-top: 12px; }
+        .map-school-card { padding: 14px 16px; background: #f8fafc; border-radius: 8px; margin-bottom: 12px; border: 1px solid #e2e8f0; }
+        .map-school-name { font-size: 16px; font-weight: 600; color: #1e293b; margin-bottom: 6px; }
+        .map-school-info { font-size: 13px; color: #64748b; margin-bottom: 4px; }
+        .map-school-type { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; background: #e0e7ff; color: #4338ca; margin-top: 6px; }
+        .map-empty { text-align: center; padding: 60px 20px; color: #94a3b8; font-size: 14px; }
+        .map-legend { display: flex; gap: 20px; padding: 10px 0; margin-top: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #475569; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+        .legend-dot.school { background: #3B82F6; }
+        .legend-dot.company { background: #16A34A; }
+        .page-loading { text-align: center; padding: 60px; color: #64748b; }
+        .page-error { text-align: center; padding: 60px; color: #ef4444; }
+        .map-label { background: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+        .map-info { padding: 10px; min-width: 200px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .map-info h4 { margin: 0 0 8px 0; font-size: 14px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
+        .map-info p { margin: 4px 0; font-size: 12px; color: #475569; }
+        .enterprise-board-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; flex-wrap: wrap; }
+        .enterprise-board-tabs { display: inline-flex; padding: 3px; border-radius: 8px; background: #eef2ff; border: 1px solid #dbe4ff; }
+        .enterprise-board-tab { border: 0; background: transparent; padding: 7px 14px; border-radius: 6px; color: #475569; cursor: pointer; font-size: 13px; }
+        .enterprise-board-tab.active { background: #3b82f6; color: white; box-shadow: 0 1px 4px rgba(59,130,246,0.3); }
+        .enterprise-board-hint { font-size: 13px; color: #64748b; }
+        .enterprise-table-wrap { overflow-x: auto; margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
+        .enterprise-table { width: 100%; min-width: 860px; border-collapse: collapse; }
+        .enterprise-table th { background: #f8fafc; color: #475569; font-size: 12px; font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+        .enterprise-table td { color: #1e293b; font-size: 13px; padding: 11px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+        .enterprise-table tr:last-child td { border-bottom: 0; }
+        .enterprise-table-name { font-weight: 600; min-width: 220px; }
+        .enterprise-table-address { max-width: 340px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .enterprise-table-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .coordinate-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+        .coordinate-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+        .coordinate-stat { padding: 8px 12px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 13px; color: #475569; }
+        .coordinate-stat strong { color: #1e293b; margin-left: 4px; }
+        .coordinate-map { height: 460px; margin-bottom: 14px; }
+        .coordinate-name { font-weight: 600; color: #0f172a; min-width: 180px; }
+        .coordinate-address { max-width: 320px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .coordinate-value { font-variant-numeric: tabular-nums; color: #334155; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -263,8 +303,15 @@
                 }
                 return null;
             }
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || '请求失败');
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json')
+                ? await res.json()
+                : { error: `接口返回异常：${res.status} ${res.statusText}` };
+            if (!res.ok) {
+                const err = new Error(data.error || '请求失败');
+                Object.assign(err, data);
+                throw err;
+            }
             return data;
         }
 
@@ -685,6 +732,7 @@
                 { key: 'canteens', label: '食堂信息', icon: '◉', group: '信息管理' },
                 { key: 'selections', label: '公开遴选', icon: '◉', group: '选企管理' },
                 { key: 'selectionContracts', label: '遴选合同', icon: '◉', group: '选企管理' },
+                { key: 'locationMap', label: '企业看板', icon: '◎', group: '选企管理' },
                 { key: 'contracts', label: '合同管理', icon: '◉', group: '信息管理' },
                 { key: 'supplierLicenses', label: '供方证照', icon: '◉', group: '信息管理' },
                 { key: 'warnings', label: '证照预警', icon: '◉', group: '信息管理' },
@@ -703,6 +751,7 @@
                 { key: 'dashboard', label: '工作台', icon: '◈' },
                 { key: 'schools', label: '学校信息', icon: '◉', group: '信息管理' },
                 { key: 'canteens', label: '食堂信息', icon: '◉', group: '信息管理' },
+                { key: 'coordinateManagement', label: '坐标管理', icon: '◉', group: '信息管理' },
                 { key: 'ingredientSuppliers', label: '食材供应商', icon: '◉', group: '供应商管理' },
                 { key: 'cateringCompanies', label: '校外供餐企业', icon: '◉', group: '供应商管理' },
                 { key: 'operationSuppliers', label: '委托经营供应商', icon: '◉', group: '供应商管理' },
@@ -1528,6 +1577,7 @@
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showModal, setShowModal] = useState(false);
+            const [showBatchModal, setShowBatchModal] = useState(false);
             const [editItem, setEditItem] = useState(null);
             const [supplierMode, setSupplierMode] = useState('view');
             const [toast, setToast] = useState(null);
@@ -1563,11 +1613,39 @@
                 loadData();
             };
 
+            const handleExport = async () => {
+                try {
+                    const token = localStorage.getItem('token');
+                    const yearParam = currentYear ? '?academicYear=' + encodeURIComponent(currentYear) : '';
+                    const res = await fetch('/api' + fetchApi + '/export' + yearParam, {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    if (!res.ok) throw new Error('导出失败');
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = title + '导出_' + new Date().toISOString().split('T')[0] + '.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } catch (e) {
+                    setToast({ message: e.message, type: 'error' });
+                }
+            };
+
             return (
                 <div>
                     <div className="page-header">
                         <div><div className="page-title">{title}</div><div className="page-breadcrumb">共 {data.length} 家企业</div></div>
-                        {user?.role === 'admin' && <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>+ 新增</button>}
+                        {user?.role === 'admin' && (
+                            <div className="btn-group">
+                                <button className="btn btn-secondary" onClick={handleExport}>批量导出</button>
+                                <button className="btn btn-secondary" onClick={() => setShowBatchModal(true)}>批量导入</button>
+                                <button className="btn btn-primary" onClick={() => { setEditItem(null); setShowModal(true); }}>+ 新增</button>
+                            </div>
+                        )}
                     </div>
                     <div className="card">
                         <div className="card-body">
@@ -1585,7 +1663,7 @@
                                             <th>法定代表人</th>
                                             <th>联系电话</th>
                                             {type === 'catering' && <th>日均供餐能力</th>}
-                                            {type === 'catering' && <th>现日供餐数量</th>}
+                                            {type === 'catering' && <th>现日供餐数量（自动汇总）</th>}
                                             {type === 'catering' && <th>应急备选企业</th>}
                                             <th>操作</th>
                                         </tr>
@@ -1618,7 +1696,143 @@
                         </div>
                     </div>
                     {showModal && <SupplierModal type={type} data={editItem} defaultMode={supplierMode} onSave={handleSave} onClose={() => setShowModal(false)} />}
+                    {showBatchModal && <SupplierBatchImportModal title={title} type={type} api={createApi} onClose={() => setShowBatchModal(false)} onSuccess={() => { setShowBatchModal(false); loadData(); }} />}
                     {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+                </div>
+            );
+        }
+
+        // ============ Supplier Batch Import Modal ============
+        function SupplierBatchImportModal({ title, type, api, onClose, onSuccess }) {
+            const [mode, setMode] = useState('excel');
+            const [file, setFile] = useState(null);
+            const [jsonText, setJsonText] = useState('');
+            const [error, setError] = useState('');
+            const [uploading, setUploading] = useState(false);
+
+            const typeFields = {
+                ingredient: '主营产品类别 mainProducts',
+                catering: '日均供餐能力 dailyCapacity、应急备选企业 emergencyBackup',
+                operation: '食堂委托经营项目数 operatedCanteens',
+                service: '服务范围 serviceScope'
+            };
+
+            const sample = {
+                name: title + '示例企业',
+                code: '91350000EXAMPLE001',
+                companyType: '有限责任公司',
+                region: '测试区域',
+                address: '测试地址',
+                legalPerson: '张三',
+                phone: '13800000000',
+                capital: '100',
+                establishDate: '2026-01-01',
+                businessScope: '经营范围说明',
+                mainProducts: type === 'ingredient' ? '米面粮油、蔬菜' : undefined,
+                dailyCapacity: type === 'catering' ? '1000' : undefined,
+                emergencyBackup: type === 'catering' ? '否' : undefined,
+                operatedCanteens: type === 'operation' ? '3' : undefined,
+                serviceScope: type === 'service' ? '检测、培训、维保' : undefined
+            };
+            Object.keys(sample).forEach(key => sample[key] === undefined && delete sample[key]);
+
+            const handleFileChange = (e) => {
+                const f = e.target.files[0];
+                if (!f) return;
+                const ext = f.name.split('.').pop().toLowerCase();
+                if (!['xlsx', 'xls'].includes(ext)) {
+                    setError('仅支持 .xlsx 或 .xls 文件');
+                    setFile(null);
+                    return;
+                }
+                setError('');
+                setFile(f);
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                setUploading(true);
+                try {
+                    let result;
+                    if (mode === 'excel') {
+                        if (!file) throw new Error('请选择 Excel 文件');
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        const token = localStorage.getItem('token');
+                        const res = await fetch('/api' + api + '/batch-import-file', {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                            body: formData
+                        });
+                        result = await res.json();
+                        if (!res.ok) throw new Error(result.error || '导入失败');
+                    } else {
+                        const suppliers = JSON.parse(jsonText);
+                        if (!Array.isArray(suppliers)) throw new Error('JSON 必须是数组格式');
+                        result = await apiFetch(api + '/batch-import', {
+                            method: 'POST',
+                            body: JSON.stringify({ suppliers })
+                        });
+                    }
+                    const failedText = result.failed ? `，失败 ${result.failed} 条：${(result.errors || []).slice(0, 3).join('；')}` : '';
+                    alert(`导入成功 ${result.success} 条${failedText}`);
+                    onSuccess && onSuccess();
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setUploading(false);
+                }
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth: '620px'}}>
+                        <div className="modal-header">
+                            <h3>批量导入{title}</h3>
+                            <button className="modal-close" onClick={onClose}>×</button>
+                        </div>
+                        <form onSubmit={handleSubmit}>
+                            <div className="modal-body">
+                                <div className="role-tabs" style={{marginBottom: 16}}>
+                                    <button type="button" className={`role-tab ${mode === 'excel' ? 'active' : ''}`} onClick={() => setMode('excel')}>Excel 文件</button>
+                                    <button type="button" className={`role-tab ${mode === 'json' ? 'active' : ''}`} onClick={() => setMode('json')}>JSON 文本</button>
+                                </div>
+                                {mode === 'excel' ? (
+                                    <div>
+                                        <p style={{fontSize: 13, color: '#888', marginBottom: 12}}>请上传 Excel 文件，第一行作为表头。</p>
+                                        <div className="form-group">
+                                            <label>选择 Excel 文件</label>
+                                            <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} style={{padding: '8px'}} />
+                                        </div>
+                                        {file && <p style={{fontSize: 12, color: '#27ae60', marginTop: 4}}>已选择：{file.name}</p>}
+                                        <p style={{fontSize: 12, color: '#888', marginTop: 12, lineHeight: 1.7}}>
+                                            <strong>通用列：</strong>企业名称、统一社会信用代码、企业类型、所在区域、详细地址、法定代表人、联系电话、注册资本、成立日期、经营范围、学年<br/>
+                                            <strong>当前类型扩展列：</strong>{typeFields[type] || '无'}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <p style={{fontSize: 13, color: '#888', marginBottom: 12}}>请输入供应商数组，字段可使用中文表头或英文 key。</p>
+                                        <div className="form-group">
+                                            <textarea
+                                                value={jsonText}
+                                                onChange={e => setJsonText(e.target.value)}
+                                                rows={12}
+                                                placeholder={JSON.stringify([sample], null, 2)}
+                                                style={{width: '100%', padding: '8px', fontFamily: 'monospace', fontSize: 12}}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {error && <p style={{color: '#e74c3c', fontSize: 13, marginTop: 8}}>{error}</p>}
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={onClose}>取消</button>
+                                <button type="submit" className="btn btn-primary" disabled={uploading}>{uploading ? '导入中...' : '导入'}</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             );
         }
@@ -1967,12 +2181,14 @@
                                             <th>签约日期</th>
                                             <th>到期日期</th>
                                             <th>金额(元)</th>
+                                            <th>餐标</th>
+                                            <th>用餐人数</th>
                                             <th>状态</th>
                                             <th>操作</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {filtered.length === 0 && <tr><td colSpan="9" style={{textAlign:'center',color:'#999',padding:'40px'}}>暂无数据</td></tr>}
+                                        {filtered.length === 0 && <tr><td colSpan="11" style={{textAlign:'center',color:'#999',padding:'40px'}}>暂无数据</td></tr>}
                                         {filtered.map(c => (
                                             <tr key={c.id}>
                                                 <td>{c.contractNo}</td>
@@ -1982,6 +2198,8 @@
                                                 <td>{c.signDate}</td>
                                                 <td>{c.endDate}</td>
                                                 <td>{c.amount ? Number(c.amount).toLocaleString() : '-'}</td>
+                                                <td>{c.mealStandard || '-'}</td>
+                                                <td>{c.dinerCount || '-'}</td>
                                                 <td><span className={`badge ${statusBadge[getDisplayStatus(c)] || 'badge-gray'}`}>{getDisplayStatus(c)}</span></td>
                                                 <td>
                                                     <div className="btn-group">
@@ -2051,6 +2269,8 @@
                         startDate: data.startDate || '',
                         endDate: data.endDate || '',
                         amount: data.amount || '',
+                        mealStandard: data.mealStandard || '',
+                        dinerCount: data.dinerCount || '',
                         paymentTerms: data.paymentTerms || '按月支付',
                         remarks: data.remarks || '',
                     };
@@ -2060,7 +2280,7 @@
                     schoolId: user?.role === 'school' ? user.schoolId : '',
                     canteenId: '', contractType: '', supplierType: '', supplierId: '',
                     contractNo: '', contractName: '',
-                    signDate: '', startDate: '', endDate: '', amount: '', paymentTerms: '按月支付', remarks: ''
+                    signDate: '', startDate: '', endDate: '', amount: '', mealStandard: '', dinerCount: '', paymentTerms: '按月支付', remarks: ''
                 };
             });
 
@@ -2247,6 +2467,14 @@
                                         <input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} disabled={!!data} />
                                     </div>
                                     <div className="form-group">
+                                        <label>餐标</label>
+                                        <input type="text" value={form.mealStandard} onChange={e => setForm({...form, mealStandard: e.target.value})} placeholder="如：15元/人/餐" disabled={!!data} />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>用餐人数</label>
+                                        <input type="number" min="0" value={form.dinerCount} onChange={e => setForm({...form, dinerCount: e.target.value})} disabled={!!data} />
+                                    </div>
+                                    <div className="form-group">
                                         <label>付款方式</label>
                                         <select value={form.paymentTerms} onChange={e => setForm({...form, paymentTerms: e.target.value})} disabled={!!data}>
                                             <option value="按月支付">按月支付</option>
@@ -2282,6 +2510,8 @@
             const [announcements, setAnnouncements] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showModal, setShowModal] = useState(false);
+            const [showPublishModal, setShowPublishModal] = useState(false);
+            const [publishForm, setPublishForm] = useState({ title: '', content: '', publishUrl: '', registrationDeadline: '' });
             const [editData, setEditData] = useState(null);
             const [toast, setToast] = useState(null);
             const [statusFilter, setStatusFilter] = useState('');
@@ -2291,11 +2521,40 @@
             const [currentStep, setCurrentStep] = useState(1);
             // 流程数据
             const [registrations, setRegistrations] = useState([]);
+            const [candidates, setCandidates] = useState([]);
+            const [inspections, setInspections] = useState([]);
+            const [shortlisted, setShortlisted] = useState([]);
+            const [results, setResults] = useState([]);
+            const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
             const [inspectionForm, setInspectionForm] = useState(null);
-            const [shortlistForm, setShortlistForm] = useState(null);
-            const [resultForm, setResultForm] = useState(null);
-            const [contractForm, setContractForm] = useState(null);
             const { user } = useAuth();
+
+            const statusToStep = (status) => ({
+                '项目已立项': 1,
+                '草稿': 1,
+                '已发布': 1,
+                '报名审核中': 2,
+                '备选确认中': 3,
+                '考察中': 4,
+                '入围确认中': 5,
+                '家长投票中': 6,
+                '待签合同': 7,
+                '已完成': 8
+            }[status] || 1);
+
+            const acceptedRegistrations = registrations.filter(r => ['审核通过', '已受理'].includes(r.status));
+            const currentCandidateIds = selectedCandidateIds;
+            const candidateRegistrations = registrations.filter(r => currentCandidateIds.includes(r.enterpriseId));
+            const passedInspections = inspections.filter(i => i.announcementId === selectedAnnouncement?.id && i.passed === true);
+            const latestShortlisted = shortlisted.find(s => s.announcementId === selectedAnnouncement?.id);
+            const shortlistedEnterprises = latestShortlisted?.shortlistedEnterprises?.length
+                ? latestShortlisted.shortlistedEnterprises
+                : passedInspections.map(i => ({ enterpriseId: i.enterpriseId, enterpriseName: i.enterpriseName }));
+            const finalResult = results.find(r => r.announcementId === selectedAnnouncement?.id && (r.status === '已确定' || r.winningEnterprise));
+            const latestRevoteResult = results.find(r => r.announcementId === selectedAnnouncement?.id && r.status === '需二次投票');
+            const latestResult = finalResult;
+            const isWorkflowViewOnly = selectedAnnouncement?.status === '已完成';
+            const voteTotal = (rows) => (rows || []).reduce((sum, row) => sum + Number(row.votes || 0), 0);
 
             const loadData = () => {
                 setLoading(true);
@@ -2313,9 +2572,37 @@
                 if (d) { setToast('删除成功'); loadData(); }
             };
 
+            const openPublishModal = () => {
+                setPublishForm({
+                    title: selectedAnnouncement?.title || '',
+                    content: selectedAnnouncement?.content || '',
+                    publishUrl: selectedAnnouncement?.publishUrl || '',
+                    registrationDeadline: selectedAnnouncement?.registrationDeadline || ''
+                });
+                setShowPublishModal(true);
+            };
+
             const handlePublish = async (id) => {
-                const d = await apiFetch(`/selection/announcements/${id}/publish`, { method: 'POST' });
-                if (d) { setToast('发布成功'); loadData(); }
+                try {
+                    const saved = await apiFetch(`/selection/announcements/${id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify(publishForm)
+                    });
+                    if (!saved) return;
+                    const d = await apiFetch(`/selection/announcements/${id}/publish`, { method: 'POST' });
+                    if (d) {
+                        setToast('公告发布成功');
+                        setShowPublishModal(false);
+                        if (selectedAnnouncement?.id === id) {
+                            setSelectedAnnouncement(d);
+                            setCurrentStep(statusToStep(d.status));
+                            handleManageWorkflow(d);
+                        }
+                        loadData();
+                    }
+                } catch (err) {
+                    alert(err.message || '公告发布失败');
+                }
             };
 
             const handleClose = async (id) => {
@@ -2334,25 +2621,37 @@
                     apiFetch('/selection/results')
                 ]).then(([regs, cands, insps, shorts, res]) => {
                     setRegistrations(regs || []);
-                    // 确定当前步骤
-                    if (res && res.length > 0 && res.find(r => r.announcementId === announcement.id)) {
-                        setCurrentStep(6);
-                    } else if (shorts && shorts.length > 0 && shorts.find(s => s.announcementId === announcement.id)) {
-                        setCurrentStep(5);
-                    } else if (insps && insps.length > 0 && insps.find(i => i.announcementId === announcement.id)) {
-                        setCurrentStep(4);
-                    } else if (cands && cands.length > 0 && cands.find(c => c.announcementId === announcement.id)) {
-                        setCurrentStep(3);
-                    } else if (announcement.status === '遴选中') {
-                        setCurrentStep(2);
-                    } else {
-                        setCurrentStep(1);
-                    }
+                    const annCands = (cands || []).filter(c => c.announcementId === announcement.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    setCandidates(annCands);
+                    setInspections((insps || []).filter(i => i.announcementId === announcement.id));
+                    setShortlisted((shorts || []).filter(s => s.announcementId === announcement.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+                    setResults((res || []).filter(r => r.announcementId === announcement.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+                    const acceptedIds = (regs || [])
+                        .filter(r => ['审核通过', '已受理'].includes(r.status))
+                        .map(r => r.enterpriseId);
+                    setSelectedCandidateIds(annCands[0]?.confirmedEnterprises?.map(e => e.enterpriseId) || acceptedIds);
+                    setCurrentStep(statusToStep(announcement.status));
                 });
                 setActiveTab('workflow');
             };
 
-            // 步骤2: 添加报名企业
+            const rollbackWorkflow = async () => {
+                const reason = prompt('请输入退回原因');
+                if (!reason) return;
+                const d = await apiFetch(`/selection/announcements/${selectedAnnouncement.id}/rollback`, {
+                    method: 'POST',
+                    body: JSON.stringify({ reason })
+                });
+                if (d) {
+                    setToast('已退回前一步');
+                    setSelectedAnnouncement(d);
+                    setCurrentStep(statusToStep(d.status));
+                    loadData();
+                    handleManageWorkflow(d);
+                }
+            };
+
+            // 步骤2: 录入并审核报名企业
             const [showAddRegModal, setShowAddRegModal] = useState(false);
             const [newReg, setNewReg] = useState({ enterpriseId: '', enterpriseName: '', contactPerson: '', contactPhone: '' });
             const [enterpriseList, setEnterpriseList] = useState([]);
@@ -2392,29 +2691,56 @@
                         enterpriseId: newReg.enterpriseId,
                         enterpriseName: selected?.name || newReg.enterpriseName,
                         contactPerson: newReg.contactPerson,
-                        contactPhone: newReg.contactPhone,
-                        status: '已受理' // 直接标记为已受理
+                        contactPhone: newReg.contactPhone
                     })
                 });
                 if (d) {
-                    setToast('已添加报名企业');
+                    setToast('已录入报名企业，待审核');
                     setShowAddRegModal(false);
                     setNewReg({ enterpriseId: '', enterpriseName: '', contactPerson: '', contactPhone: '' });
                     handleManageWorkflow(selectedAnnouncement);
                 }
             };
 
+            const reviewRegistration = async (reg, status) => {
+                let reviewComments = '';
+                if (status === '审核不通过') {
+                    reviewComments = prompt('请输入审核不通过原因');
+                    if (!reviewComments) return;
+                }
+                const d = await apiFetch(`/selection/registrations/${reg.id}/review`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ status, reviewComments })
+                });
+                if (d) {
+                    setToast(status === '审核通过' ? '报名企业审核通过' : '报名企业审核不通过');
+                    handleManageWorkflow(selectedAnnouncement);
+                }
+            };
+
             // 步骤3: 确认备选企业
+            const toggleCandidate = (enterpriseId) => {
+                setSelectedCandidateIds(ids =>
+                    ids.includes(enterpriseId) ? ids.filter(id => id !== enterpriseId) : [...ids, enterpriseId]
+                );
+            };
+
             const handleConfirmCandidates = async () => {
-                if (registrations.length < 2) { alert('备选企业至少需要2家'); return; }
+                const defaultIds = selectedCandidateIds.length ? selectedCandidateIds : acceptedRegistrations.map(r => r.enterpriseId);
                 const d = await apiFetch('/selection/candidates', {
                     method: 'POST',
                     body: JSON.stringify({
                         announcementId: selectedAnnouncement.id,
-                        enterpriseIds: registrations.map(r => r.enterpriseId)
+                        enterpriseIds: defaultIds
                     })
                 });
-                if (d) { setToast('备选企业已确认'); setCurrentStep(3); }
+                if (d) {
+                    setToast('备选企业已确认');
+                    const updated = { ...selectedAnnouncement, status: '考察中' };
+                    setSelectedAnnouncement(updated);
+                    handleManageWorkflow(updated);
+                    loadData();
+                }
             };
 
             // 步骤4: 考察记录
@@ -2430,9 +2756,16 @@
                 const method = inspectionForm ? 'PUT' : 'POST';
                 const url = inspectionForm ? `/selection/inspections/${inspectionForm.id}` : '/selection/inspections';
                 const payload = { ...inspData, announcementId: selectedAnnouncement.id };
+                const passed = inspData.passed;
+                delete payload.passed;
                 if (inspectionForm) { delete payload.enterpriseId; delete payload.enterpriseName; }
                 const d = await apiFetch(url, { method, body: JSON.stringify(payload) });
                 if (d) {
+                    if (passed === true) {
+                        await apiFetch(`/selection/inspections/${d.id}/pass`, { method: 'POST', body: JSON.stringify({ comments: '考察通过' }) });
+                    } else if (passed === false) {
+                        await apiFetch(`/selection/inspections/${d.id}/fail`, { method: 'POST', body: JSON.stringify({ comments: '考察不通过' }) });
+                    }
                     setToast('考察记录已保存');
                     setShowInspModal(false);
                     setInspectionForm(null);
@@ -2455,8 +2788,7 @@
             const [shortlistData, setShortlistData] = useState({ enterpriseIds: [], determinationTime: new Date().toISOString().split('T')[0] });
 
             const openShortlistModal = () => {
-                const passedRegs = registrations.filter(r => r.enterpriseId); // 简化：取所有已受理的
-                setShortlistData({ enterpriseIds: passedRegs.map(r => r.enterpriseId), determinationTime: new Date().toISOString().split('T')[0] });
+                setShortlistData({ enterpriseIds: passedInspections.map(i => i.enterpriseId), determinationTime: new Date().toISOString().split('T')[0] });
                 setShowShortlistModal(true);
             };
 
@@ -2469,55 +2801,102 @@
                         enterpriseIds: shortlistData.enterpriseIds
                     })
                 });
-                if (d) { setToast('入围企业已确定'); setShowShortlistModal(false); setCurrentStep(5); }
+                if (d) {
+                    setToast('入围企业已确定');
+                    setShowShortlistModal(false);
+                    const updated = { ...selectedAnnouncement, status: '家长投票中' };
+                    setSelectedAnnouncement(updated);
+                    handleManageWorkflow(updated);
+                    loadData();
+                }
             };
 
-            // 步骤6: 确定中标
+            // 步骤6: 家长投票确定中标
             const [showResultModal, setShowResultModal] = useState(false);
-            const [resultData, setResultData] = useState({ winningEnterpriseId: '', winningEnterpriseName: '', determinationMethod: '抽签', determinationBy: '家长代表', parentRepresentatives: '' });
+            const [resultData, setResultData] = useState({ voteTime: '', voteLocation: '', parentAttendance: '', validVotes: 0, roundNo: 1, determinationBy: '家长代表', parentRepresentatives: '', voteResults: [] });
 
-            const openResultModal = () => {
-                if (registrations.length > 0) {
-                    setResultData({ ...resultData, winningEnterpriseId: registrations[0].enterpriseId, winningEnterpriseName: registrations[0].enterpriseName });
-                }
+            const openResultModal = (revoteSource = null) => {
+                const voteEnterprises = revoteSource?.revoteEnterprises?.length
+                    ? revoteSource.revoteEnterprises
+                    : shortlistedEnterprises;
+                const voteRows = voteEnterprises.map(e => ({ enterpriseId: e.enterpriseId, enterpriseName: e.enterpriseName, votes: 0 }));
+                setResultData({
+                    voteTime: new Date().toISOString().split('T')[0],
+                    voteLocation: '',
+                    parentAttendance: '',
+                    validVotes: 0,
+                    roundNo: revoteSource ? Number(revoteSource.roundNo || 1) + 1 : 1,
+                    determinationBy: '家长代表',
+                    parentRepresentatives: '',
+                    voteResults: voteRows
+                });
                 setShowResultModal(true);
             };
 
             const handleConfirmResult = async () => {
-                if (!resultData.winningEnterpriseName) { alert('请选择中标企业'); return; }
-                const d = await apiFetch('/selection/results', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        announcementId: selectedAnnouncement.id,
-                        winningEnterprise: { enterpriseId: resultData.winningEnterpriseId, enterpriseName: resultData.winningEnterpriseName },
-                        determinationMethod: resultData.determinationMethod,
-                        determinationBy: resultData.determinationBy,
-                        parentRepresentatives: resultData.parentRepresentatives.split(',').map(s => s.trim())
-                    })
-                });
-                if (d) { setToast('中标结果已确定'); setShowResultModal(false); setCurrentStep(6); }
+                try {
+                    const d = await apiFetch('/selection/results', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            announcementId: selectedAnnouncement.id,
+                            voteResults: resultData.voteResults,
+                            voteTime: resultData.voteTime,
+                            voteLocation: resultData.voteLocation,
+                            parentAttendance: resultData.parentAttendance,
+                            validVotes: voteTotal(resultData.voteResults),
+                            roundNo: resultData.roundNo,
+                            determinationBy: resultData.determinationBy,
+                            parentRepresentatives: resultData.parentRepresentatives.split(',').map(s => s.trim())
+                        })
+                    });
+                    if (d) {
+                        setShowResultModal(false);
+                        if (d.status === '需二次投票') {
+                            alert('首次家长投票结果已保存。因没有供餐企业有效得票超过有效投票50%，请组织得票最高的2家企业进行第二次家长投票。');
+                            setToast('首次投票已存档，请点击第二次家长投票');
+                            handleManageWorkflow(selectedAnnouncement);
+                        } else {
+                            setToast('中标结果已确定');
+                            const updated = { ...selectedAnnouncement, status: '待签合同' };
+                            setSelectedAnnouncement(updated);
+                            handleManageWorkflow(updated);
+                        }
+                        loadData();
+                    }
+                } catch (err) {
+                    alert(err.message || '投票结果提交失败');
+                }
             };
 
             // 步骤7: 签订合同
             const [showContractModal, setShowContractModal] = useState(false);
-            const [contractData, setContractData] = useState({ contractStartDate: '', contractEndDate: '', contractAmount: '', paymentTerms: '季度结算', remarks: '' });
+            const [contractData, setContractData] = useState({ contractStartDate: '', contractEndDate: '', contractAmount: '', mealStandard: '', dinerCount: '', paymentTerms: '季度结算', remarks: '' });
 
             const openContractModal = () => {
-                setContractData({ contractStartDate: new Date().toISOString().split('T')[0], contractEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], contractAmount: '', paymentTerms: '季度结算', remarks: '' });
+                setContractData({ contractStartDate: new Date().toISOString().split('T')[0], contractEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], contractAmount: '', mealStandard: '', dinerCount: '', paymentTerms: '季度结算', remarks: '' });
                 setShowContractModal(true);
             };
 
             const handleSignContract = async () => {
+                const winner = finalResult?.winningEnterprise;
                 const d = await apiFetch('/selection/contracts', {
                     method: 'POST',
                     body: JSON.stringify({
                         announcementId: selectedAnnouncement.id,
-                        enterpriseId: resultData.winningEnterpriseId,
-                        enterpriseName: resultData.winningEnterpriseName,
+                        resultId: finalResult?.id,
+                        enterpriseId: winner?.enterpriseId,
+                        enterpriseName: winner?.enterpriseName,
                         ...contractData
                     })
                 });
-                if (d) { setToast('遴选合同已创建'); setShowContractModal(false); setCurrentStep(7); }
+                if (d) {
+                    setToast('遴选合同已创建，流程完成');
+                    setShowContractModal(false);
+                    const updated = { ...selectedAnnouncement, status: '已完成' };
+                    setSelectedAnnouncement(updated);
+                    handleManageWorkflow(updated);
+                    loadData();
+                }
             };
 
             const filtered = announcements.filter(a => {
@@ -2531,11 +2910,11 @@
                     {toast && <div className="toast" onClick={() => setToast(null)}>{toast}</div>}
                     <div className="page-header">
                         <div><h2>公开遴选</h2></div>
-                        <button className="btn-primary" onClick={handleCreate}>+ 新建公告</button>
+                        <button className="btn-primary" onClick={handleCreate}>+ 发起遴选</button>
                     </div>
 
                     <div className="tabs">
-                        <button className={`tab ${activeTab === 'announcements' ? 'active' : ''}`} onClick={() => setActiveTab('announcements')}>公告管理 ({filtered.length})</button>
+                        <button className={`tab ${activeTab === 'announcements' ? 'active' : ''}`} onClick={() => setActiveTab('announcements')}>遴选项目管理 ({filtered.length})</button>
                     </div>
 
                     {activeTab === 'announcements' ? (
@@ -2543,16 +2922,18 @@
                             <div className="filter-bar">
                                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                                     <option value="">全部状态</option>
-                                    <option value="草稿">草稿</option>
-                                    <option value="已发布">已发布</option>
-                                    <option value="遴选中">遴选中</option>
-                                    <option value="已结束">已结束</option>
+                                    <option value="项目已立项">项目已立项</option>
+                                    <option value="报名审核中">报名审核中</option>
+                                    <option value="考察中">考察中</option>
+                                    <option value="家长投票中">家长投票中</option>
+                                    <option value="待签合同">待签合同</option>
+                                    <option value="已完成">已完成</option>
                                 </select>
-                                <input type="text" placeholder="搜索公告标题..." value={search} onChange={e => setSearch(e.target.value)} />
+                                <input type="text" placeholder="搜索项目名称..." value={search} onChange={e => setSearch(e.target.value)} />
                             </div>
                             {loading ? <div className="loading">加载中...</div> : (
                                 <table className="data-table">
-                                    <thead><tr><th>公告编号</th><th>标题</th><th>服务类型</th><th>报名截止</th><th>状态</th><th>操作</th></tr></thead>
+                                    <thead><tr><th>项目编号</th><th>项目名称</th><th>服务类型</th><th>报名截止</th><th>状态</th><th>操作</th></tr></thead>
                                     <tbody>
                                         {filtered.map(a => (
                                             <tr key={a.id}>
@@ -2563,10 +2944,8 @@
                                                 <td><span className={`status-badge status-${a.status}`}>{a.status}</span></td>
                                                 <td>
                                                     <button className="btn-small" onClick={() => handleEdit(a)}>查看</button>
-                                                    {a.status === '草稿' && <button className="btn-small btn-primary" onClick={() => handlePublish(a.id)}>发布</button>}
-                                                    {a.status !== '草稿' && <button className="btn-small btn-primary" onClick={() => handleManageWorkflow(a)}>流程管理</button>}
-                                                    {a.status === '已发布' && <button className="btn-small" onClick={() => handleClose(a.id)}>结束</button>}
-                                                    {a.status === '草稿' && <button className="btn-small btn-danger" onClick={() => handleDelete(a.id)}>删除</button>}
+                                                    <button className="btn-small btn-primary" onClick={() => handleManageWorkflow(a)}>{a.status === '已完成' ? '流程查看' : '流程管理'}</button>
+                                                    {['项目已立项', '草稿'].includes(a.status) && <button className="btn-small btn-danger" onClick={() => handleDelete(a.id)}>删除</button>}
                                                 </td>
                                             </tr>
                                         ))}
@@ -2580,45 +2959,66 @@
                             <div className="page-header" style={{marginBottom: '16px'}}>
                                 <button className="btn" onClick={() => setActiveTab('announcements')}>← 返回</button>
                                 <h3 style={{margin: '0'}}>{selectedAnnouncement?.title}</h3>
+                                {selectedAnnouncement?.status !== '项目已立项' && selectedAnnouncement?.status !== '草稿' && selectedAnnouncement?.status !== '已完成' && (
+                                    <button className="btn" onClick={rollbackWorkflow}>退回前一步</button>
+                                )}
                             </div>
+                            {isWorkflowViewOnly && <div className="alert alert-info">该遴选项目状态为已完成，仅支持流程查看，不能继续流程管理。</div>}
 
                             <SelectionWorkflowStepper currentStep={currentStep} />
 
                             {/* 步骤1: 发布公告 */}
                             <div className="workflow-section">
                                 <h4>① 发布公告</h4>
+                                <div className="info-item"><span>项目状态</span><span className={`status-badge status-${selectedAnnouncement?.status}`}>{selectedAnnouncement?.status}</span></div>
+                                <div className="info-item"><span>项目名称</span><span>{selectedAnnouncement?.title}</span></div>
                                 <div className="info-item"><span>公告状态</span><span className={`status-badge status-${selectedAnnouncement?.status}`}>{selectedAnnouncement?.status}</span></div>
                                 <div className="info-item"><span>发布时间</span><span>{selectedAnnouncement?.publishTime ? selectedAnnouncement.publishTime.split('T')[0] : '-'}</span></div>
                                 <div className="info-item"><span>发布网址</span><span>{selectedAnnouncement?.publishUrl || '-'}</span></div>
-                                {selectedAnnouncement?.status === '草稿' && <button className="btn btn-primary" onClick={() => handlePublish(selectedAnnouncement.id)}>发布公告</button>}
+                                {!isWorkflowViewOnly && ['项目已立项', '草稿'].includes(selectedAnnouncement?.status) && <button className="btn btn-primary" onClick={openPublishModal}>发起公告</button>}
                             </div>
 
-                            {/* 步骤2: 企业报名 */}
+                            {/* 步骤2: 学校录入并审核报名企业 */}
                             <div className="workflow-section">
-                                <h4>② 企业报名</h4>
+                                <h4>② 学校录入并审核报名企业</h4>
                                 <p>已报名企业：{registrations.length} 家</p>
                                 {registrations.length > 0 && (
                                     <table className="data-table">
-                                        <thead><tr><th>企业名称</th><th>联系人</th><th>联系电话</th></tr></thead>
+                                        <thead><tr><th>企业名称</th><th>联系人</th><th>联系电话</th><th>状态</th><th>原因</th><th>操作</th></tr></thead>
                                         <tbody>
-                                            {registrations.map(r => <tr key={r.id}><td>{r.enterpriseName}</td><td>{r.contactPerson}</td><td>{r.contactPhone}</td></tr>)}
+                                            {registrations.map(r => <tr key={r.id}>
+                                                <td>{r.enterpriseName}</td>
+                                                <td>{r.contactPerson}</td>
+                                                <td>{r.contactPhone}</td>
+                                                <td>{r.status}</td>
+                                                <td>{r.reviewComments || '-'}</td>
+                                                <td>
+                                                    {!isWorkflowViewOnly && r.status === '待审核' && <button className="btn-small btn-primary" onClick={() => reviewRegistration(r, '审核通过')}>通过</button>}
+                                                    {!isWorkflowViewOnly && r.status === '待审核' && <button className="btn-small btn-danger" onClick={() => reviewRegistration(r, '审核不通过')}>不通过</button>}
+                                                </td>
+                                            </tr>)}
                                         </tbody>
                                     </table>
                                 )}
-                                {selectedAnnouncement?.status === '已发布' && (
-                                    <button className="btn btn-primary" style={{marginTop: '12px'}} onClick={openAddRegModal}>+ 添加报名企业</button>
-                                )}
-                                {registrations.length >= 2 && currentStep < 3 && (
-                                    <button className="btn btn-primary" style={{marginTop: '12px', marginLeft: '8px'}} onClick={handleConfirmCandidates}>确认备选企业</button>
+                                {!isWorkflowViewOnly && ['已发布', '报名审核中'].includes(selectedAnnouncement?.status) && (
+                                    <button className="btn btn-primary" style={{marginTop: '12px'}} onClick={openAddRegModal}>+ 录入报名企业</button>
                                 )}
                             </div>
 
                             {/* 步骤3: 确定备选 */}
-                            {currentStep >= 3 && (
+                            {currentStep >= 2 && (
                                 <div className="workflow-section">
                                     <h4>③ 确定备选企业</h4>
-                                    <p>备选企业：{registrations.length} 家（全部受理）</p>
-                                    <button className="btn btn-primary" onClick={() => setCurrentStep(4)}>→ 下一步：组织考察</button>
+                                    <p>审核通过企业：{acceptedRegistrations.length} 家。大于 5 家时，按线下随机结果勾选不少于 5 家；不超过 5 家时全部勾选。</p>
+                                    {acceptedRegistrations.map(r => (
+                                        <label key={r.id} className="checkbox-label" style={{display: 'block', margin: '6px 0'}}>
+                                            <input type="checkbox" checked={selectedCandidateIds.includes(r.enterpriseId)} onChange={() => toggleCandidate(r.enterpriseId)} />
+                                            {r.enterpriseName}
+                                        </label>
+                                    ))}
+                                    {!isWorkflowViewOnly && ['报名审核中', '备选确认中'].includes(selectedAnnouncement?.status) && (
+                                        <button className="btn btn-primary" onClick={handleConfirmCandidates}>确认备选企业</button>
+                                    )}
                                 </div>
                             )}
 
@@ -2626,16 +3026,14 @@
                             {currentStep >= 4 && (
                                 <div className="workflow-section">
                                     <h4>④ 组织考察</h4>
-                                    {registrations.map(r => {
-                                        // 简化处理
-                                        return (
-                                            <div key={r.id} className="info-item">
-                                                <span>{r.enterpriseName}</span>
-                                                <button className="btn-small btn-primary" onClick={() => openInspectionModal(r)}>记录考察</button>
-                                            </div>
-                                        );
-                                    })}
-                                    <button className="btn btn-primary" style={{marginTop: '12px'}} onClick={openShortlistModal}>确定入围企业</button>
+                                    {candidateRegistrations.map(r => (
+                                        <div key={r.id} className="info-item">
+                                            <span>{r.enterpriseName}</span>
+                                            {!isWorkflowViewOnly && <button className="btn-small btn-primary" onClick={() => openInspectionModal(r)}>记录考察</button>}
+                                        </div>
+                                    ))}
+                                    {inspections.length > 0 && <p>考察通过：{passedInspections.length} 家</p>}
+                                    {!isWorkflowViewOnly && <button className="btn btn-primary" style={{marginTop: '12px'}} onClick={openShortlistModal}>确定入围企业</button>}
                                 </div>
                             )}
 
@@ -2643,35 +3041,69 @@
                             {currentStep >= 5 && (
                                 <div className="workflow-section">
                                     <h4>⑤ 确定入围企业</h4>
-                                    <p>已入围 {registrations.length} 家</p>
-                                    <button className="btn btn-primary" onClick={openResultModal}>确定中标结果</button>
+                                    <p>已入围 {shortlistedEnterprises.length} 家，入围企业至少 3 家。</p>
+                                    {shortlistedEnterprises.map(e => <div key={e.enterpriseId} className="info-item"><span>{e.enterpriseName}</span></div>)}
+                                    {!isWorkflowViewOnly && !results.length && <button className="btn btn-primary" onClick={() => openResultModal()}>录入首次投票结果</button>}
                                 </div>
                             )}
 
-                            {/* 步骤6: 中标结果 */}
+                            {/* 步骤6: 家长投票 */}
                             {currentStep >= 6 && (
                                 <div className="workflow-section">
-                                    <h4>⑥ 中标结果</h4>
-                                    <p>中标企业：<strong>{registrations[0]?.enterpriseName}</strong></p>
-                                    <button className="btn btn-primary" onClick={openContractModal}>签订遴选合同</button>
+                                    <h4>⑥ 家长投票确定中标</h4>
+                                    <p>确定方式：投票。供餐企业有效得票超过有效投票 50% 时直接中标；否则组织得票最高的 2 家企业重新投票。</p>
+                                    {results.length > 0 && (
+                                        <table className="data-table">
+                                            <thead><tr><th>轮次</th><th>时间</th><th>地点</th><th>家长到位人数</th><th>有效票数</th><th>状态</th><th>结果</th></tr></thead>
+                                            <tbody>
+                                                {results.slice().reverse().map(r => (
+                                                    <tr key={r.id}>
+                                                        <td>第 {r.roundNo || 1} 轮</td>
+                                                        <td>{r.voteTime || '-'}</td>
+                                                        <td>{r.voteLocation || '-'}</td>
+                                                        <td>{r.parentAttendance || '-'}</td>
+                                                        <td>{r.validVotes || voteTotal(r.voteResults)}</td>
+                                                        <td>{r.status || (r.winningEnterprise ? '已确定' : '-')}</td>
+                                                        <td>{r.winningEnterprise ? `中标：${r.winningEnterprise.enterpriseName}` : `需二次投票：${(r.revoteEnterprises || []).map(e => e.enterpriseName).join('、')}`}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                    {finalResult ? (
+                                        <p>中标企业：<strong>{finalResult.winningEnterprise?.enterpriseName}</strong></p>
+                                    ) : (
+                                        !isWorkflowViewOnly && !latestRevoteResult && <button className="btn btn-primary" onClick={() => openResultModal()}>录入首次投票结果</button>
+                                    )}
+                                    {!isWorkflowViewOnly && selectedAnnouncement?.status === '家长投票中' && latestRevoteResult && !finalResult && <button className="btn btn-primary" onClick={() => openResultModal(latestRevoteResult)}>第二次家长投票</button>}
+                                    {!isWorkflowViewOnly && finalResult && <button className="btn btn-primary" onClick={openContractModal}>签订遴选合同</button>}
                                 </div>
                             )}
 
                             {/* 步骤7: 签订合同 */}
                             {currentStep >= 7 && (
                                 <div className="workflow-section">
-                                    <h4>⑦ 遴选完成</h4>
+                                    <h4>⑦ 签订合同</h4>
+                                    {!isWorkflowViewOnly && selectedAnnouncement?.status === '待签合同' && <button className="btn btn-primary" onClick={openContractModal}>签订遴选合同</button>}
+                                    {selectedAnnouncement?.status === '已完成' && <p className="status-success">合同已签订</p>}
+                                </div>
+                            )}
+
+                            {/* 步骤8: 完成 */}
+                            {currentStep >= 8 && (
+                                <div className="workflow-section">
+                                    <h4>⑧ 遴选完成</h4>
                                     <p className="status-success">遴选流程已完成！</p>
                                 </div>
                             )}
                         </>
                     )}
 
-                    {/* 添加报名企业弹窗 */}
+                    {/* 录入报名企业弹窗 */}
                     {showAddRegModal && (
                         <div className="modal-overlay" onClick={() => setShowAddRegModal(false)}>
                             <div className="modal" onClick={e => e.stopPropagation()}>
-                                <div className="modal-header"><h3>添加报名企业</h3><button className="close" onClick={() => setShowAddRegModal(false)}>×</button></div>
+                                <div className="modal-header"><h3>录入报名企业</h3><button className="close" onClick={() => setShowAddRegModal(false)}>×</button></div>
                                 <form className="selection-form" onSubmit={e => { e.preventDefault(); handleAddRegistration(); }}>
                                     <div className="form-group">
                                         <label>选择企业 <span className="required">*</span></label>
@@ -2682,7 +3114,7 @@
                                     </div>
                                     <div className="form-group"><label>联系人</label><input type="text" value={newReg.contactPerson} onChange={e => setNewReg({...newReg, contactPerson: e.target.value})} placeholder="请输入联系人" /></div>
                                     <div className="form-group"><label>联系电话</label><input type="text" value={newReg.contactPhone} onChange={e => setNewReg({...newReg, contactPhone: e.target.value})} placeholder="请输入联系电话" /></div>
-                                    <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowAddRegModal(false)}>取消</button><button type="submit" className="btn-primary">添加</button></div>
+                                    <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowAddRegModal(false)}>取消</button><button type="submit" className="btn-primary">录入</button></div>
                                 </form>
                             </div>
                         </div>
@@ -2711,21 +3143,51 @@
                             <div className="modal" onClick={e => e.stopPropagation()}>
                                 <div className="modal-header"><h3>确定入围企业</h3><button className="close" onClick={() => setShowShortlistModal(false)}>×</button></div>
                                 <form className="selection-form" onSubmit={e => { e.preventDefault(); handleConfirmShortlisted(); }}>
-                                    <div className="form-group"><label>入围企业</label><p>已报名企业自动成为入围企业</p></div>
+                                    <div className="form-group">
+                                        <label>入围企业</label>
+                                        {passedInspections.map(i => (
+                                            <label key={i.id} style={{display: 'block', margin: '6px 0'}}>
+                                                <input type="checkbox" checked={shortlistData.enterpriseIds.includes(i.enterpriseId)} onChange={e => {
+                                                    const ids = e.target.checked
+                                                        ? [...shortlistData.enterpriseIds, i.enterpriseId]
+                                                        : shortlistData.enterpriseIds.filter(id => id !== i.enterpriseId);
+                                                    setShortlistData({...shortlistData, enterpriseIds: ids});
+                                                }} />
+                                                {i.enterpriseName}
+                                            </label>
+                                        ))}
+                                    </div>
                                     <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowShortlistModal(false)}>取消</button><button type="submit" className="btn-primary">确认入围</button></div>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* 中标结果弹窗 */}
+                    {/* 家长投票弹窗 */}
                     {showResultModal && (
                         <div className="modal-overlay" onClick={() => setShowResultModal(false)}>
                             <div className="modal" onClick={e => e.stopPropagation()}>
-                                <div className="modal-header"><h3>确定中标结果</h3><button className="close" onClick={() => setShowResultModal(false)}>×</button></div>
+                                <div className="modal-header"><h3>{resultData.roundNo > 1 ? '二次投票结果' : '家长投票结果'}</h3><button className="close" onClick={() => setShowResultModal(false)}>×</button></div>
                                 <form className="selection-form" onSubmit={e => { e.preventDefault(); handleConfirmResult(); }}>
-                                    <div className="form-group"><label>中标企业 <span className="required">*</span></label><select value={resultData.winningEnterpriseId} onChange={e => { const r = registrations.find(reg => reg.enterpriseId === e.target.value); setResultData({...resultData, winningEnterpriseId: e.target.value, winningEnterpriseName: r?.enterpriseName || ''}); }}><option value="">请选择</option>{registrations.map(r => <option key={r.id} value={r.enterpriseId}>{r.enterpriseName}</option>)}</select></div>
-                                    <div className="form-group"><label>确定方式</label><select value={resultData.determinationMethod} onChange={e => setResultData({...resultData, determinationMethod: e.target.value})}><option value="抽签">抽签</option><option value="投票">投票</option><option value="其他">其他</option></select></div>
+                                    <div className="form-group"><label>确定方式</label><p className="form-hint">投票。有效得票必须超过有效投票 50%，否则只保留得票最高的 2 家重新投票。</p></div>
+                                    <div className="form-row">
+                                        <div className="form-group"><label>投票时间 <span className="required">*</span></label><input type="date" value={resultData.voteTime} onChange={e => setResultData({...resultData, voteTime: e.target.value})} required /></div>
+                                        <div className="form-group"><label>投票地点 <span className="required">*</span></label><input type="text" value={resultData.voteLocation} onChange={e => setResultData({...resultData, voteLocation: e.target.value})} placeholder="请输入投票地点" required /></div>
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group"><label>家长到位人数 <span className="required">*</span></label><input type="number" min="1" value={resultData.parentAttendance} onChange={e => setResultData({...resultData, parentAttendance: e.target.value})} required /></div>
+                                        <div className="form-group"><label>有效票数</label><input type="number" value={voteTotal(resultData.voteResults)} disabled /></div>
+                                    </div>
+                                    {resultData.voteResults.map((row, idx) => (
+                                        <div className="form-row" key={row.enterpriseId}>
+                                            <div className="form-group"><label>入围企业</label><p className="form-hint">{row.enterpriseName}</p></div>
+                                            <div className="form-group"><label>得票数</label><input type="number" min="0" value={row.votes} onChange={e => {
+                                                const next = [...resultData.voteResults];
+                                                next[idx] = {...row, votes: e.target.value};
+                                                setResultData({...resultData, voteResults: next});
+                                            }} /></div>
+                                        </div>
+                                    ))}
                                     <div className="form-group"><label>确定人员</label><input type="text" value={resultData.determinationBy} onChange={e => setResultData({...resultData, determinationBy: e.target.value})} placeholder="如：家长代表" /></div>
                                     <div className="form-group"><label>家长代表</label><input type="text" value={resultData.parentRepresentatives} onChange={e => setResultData({...resultData, parentRepresentatives: e.target.value})} placeholder="多个用逗号分隔" /></div>
                                     <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowResultModal(false)}>取消</button><button type="submit" className="btn-primary">确定</button></div>
@@ -2742,6 +3204,7 @@
                                 <form className="selection-form" onSubmit={e => { e.preventDefault(); handleSignContract(); }}>
                                     <div className="form-row"><div className="form-group"><label>合同开始日期</label><input type="date" value={contractData.contractStartDate} onChange={e => setContractData({...contractData, contractStartDate: e.target.value})} /></div><div className="form-group"><label>合同结束日期</label><input type="date" value={contractData.contractEndDate} onChange={e => setContractData({...contractData, contractEndDate: e.target.value})} /></div></div>
                                     <div className="form-row"><div className="form-group"><label>合同金额(万元)</label><input type="number" value={contractData.contractAmount} onChange={e => setContractData({...contractData, contractAmount: e.target.value})} placeholder="0" /></div><div className="form-group"><label>付款方式</label><select value={contractData.paymentTerms} onChange={e => setContractData({...contractData, paymentTerms: e.target.value})}><option value="季度结算">季度结算</option><option value="月结">月结</option><option value="半年结">半年结</option><option value="年结">年结</option></select></div></div>
+                                    <div className="form-row"><div className="form-group"><label>餐标</label><input type="text" value={contractData.mealStandard} onChange={e => setContractData({...contractData, mealStandard: e.target.value})} placeholder="如：15元/人/餐" /></div><div className="form-group"><label>用餐人数</label><input type="number" min="0" value={contractData.dinerCount} onChange={e => setContractData({...contractData, dinerCount: e.target.value})} placeholder="0" /></div></div>
                                     <div className="form-group"><label>备注</label><textarea value={contractData.remarks} onChange={e => setContractData({...contractData, remarks: e.target.value})} rows="2" /></div>
                                     <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowContractModal(false)}>取消</button><button type="submit" className="btn-primary">签订合同</button></div>
                                 </form>
@@ -2749,20 +3212,37 @@
                         </div>
                     )}
 
-                    {showModal && <SelectionFormModal item={editData} onClose={() => setShowModal(false)} onSave={() => { setShowModal(false); loadData(); setToast('保存成功'); }} />}
+                    {showModal && <SelectionFormModal item={editData} onClose={() => setShowModal(false)} onSave={() => { setShowModal(false); loadData(); setToast('遴选项目已立项'); }} />}
+                    {showPublishModal && (
+                        <div className="modal-overlay" onClick={() => setShowPublishModal(false)}>
+                            <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+                                <div className="modal-header"><h3>发起公告</h3><button className="close" onClick={() => setShowPublishModal(false)}>×</button></div>
+                                <form className="selection-form" onSubmit={e => { e.preventDefault(); handlePublish(selectedAnnouncement.id); }}>
+                                    <div className="form-group"><label>公告标题 <span className="required">*</span></label><input type="text" value={publishForm.title} onChange={e => setPublishForm({...publishForm, title: e.target.value})} required /></div>
+                                    <div className="form-group"><label>公告内容 <span className="required">*</span></label><textarea rows="4" value={publishForm.content} onChange={e => setPublishForm({...publishForm, content: e.target.value})} required /></div>
+                                    <div className="form-row">
+                                        <div className="form-group"><label>发布公告网址 <span className="required">*</span></label><input type="url" value={publishForm.publishUrl} onChange={e => setPublishForm({...publishForm, publishUrl: e.target.value})} required /></div>
+                                        <div className="form-group"><label>报名截止日期 <span className="required">*</span></label><input type="date" value={publishForm.registrationDeadline} onChange={e => setPublishForm({...publishForm, registrationDeadline: e.target.value})} required /></div>
+                                    </div>
+                                    <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowPublishModal(false)}>取消</button><button type="submit" className="btn-primary">发布公告</button></div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
 
         // ============ Selection Workflow Stepper ============
         const STEPS = [
-            { id: 1, label: '发布公告', key: '已发布' },
-            { id: 2, label: '企业报名', key: '遴选中' },
+            { id: 1, label: '发布公告', key: '项目已立项' },
+            { id: 2, label: '报名审核', key: '报名审核中' },
             { id: 3, label: '确定备选', key: 'candidates' },
             { id: 4, label: '组织考察', key: 'inspections' },
             { id: 5, label: '确定入围', key: 'shortlisted' },
-            { id: 6, label: '家长遴选', key: 'results' },
-            { id: 7, label: '签订合同', key: 'contracts' }
+            { id: 6, label: '家长投票', key: 'results' },
+            { id: 7, label: '签订合同', key: 'contracts' },
+            { id: 8, label: '完成', key: 'done' }
         ];
 
         function SelectionWorkflowStepper({ currentStep, onStepClick }) {
@@ -2842,7 +3322,7 @@
                 <div className="modal-overlay" onClick={onClose}>
                     <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>{item ? '查看遴选公告' : '新建遴选公告'}</h3>
+                            <h3>{item ? '查看遴选项目' : '发起遴选'}</h3>
                             <button className="close" onClick={onClose}>×</button>
                         </div>
                         <form onSubmit={handleSubmit} className="selection-form">
@@ -2890,61 +3370,29 @@
                             </div>
 
                             <div className="form-group">
-                                <label>公告标题 <span className="required">*</span></label>
+                                <label>项目名称 <span className="required">*</span></label>
                                 <input
                                     type="text"
                                     value={form.title}
                                     onChange={e => setForm({ ...form, title: e.target.value })}
-                                    placeholder="请输入公告标题"
+                                    placeholder="请输入遴选项目名称"
                                     disabled={isViewMode}
                                     required
                                 />
                             </div>
 
-                            <div className="form-group">
-                                <label>公告内容</label>
-                                <textarea
-                                    value={form.content}
-                                    onChange={e => setForm({ ...form, content: e.target.value })}
-                                    placeholder="请输入公告详细内容"
-                                    rows="4"
-                                    disabled={isViewMode}
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label>企业资质要求</label>
-                                <textarea
-                                    value={form.requirements}
-                                    onChange={e => setForm({ ...form, requirements: e.target.value })}
-                                    placeholder="请输入对报名企业的资质要求"
-                                    rows="2"
-                                    disabled={isViewMode}
-                                />
-                            </div>
-
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>发布网址</label>
-                                    <input
-                                        type="url"
-                                        value={form.publishUrl}
-                                        onChange={e => setForm({ ...form, publishUrl: e.target.value })}
-                                        placeholder="http://..."
-                                        disabled={isViewMode}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>报名截止日期 <span className="required">*</span></label>
-                                    <input
-                                        type="date"
-                                        value={form.registrationDeadline}
-                                        onChange={e => setForm({ ...form, registrationDeadline: e.target.value })}
-                                        disabled={isViewMode}
-                                        required
-                                    />
-                                </div>
-                            </div>
+                            {isViewMode && (
+                                <>
+                                    <div className="form-group">
+                                        <label>公告内容</label>
+                                        <textarea value={form.content || ''} rows="4" disabled />
+                                    </div>
+                                    <div className="form-row">
+                                        <div className="form-group"><label>发布网址</label><input type="url" value={form.publishUrl || ''} disabled /></div>
+                                        <div className="form-group"><label>报名截止日期</label><input type="date" value={form.registrationDeadline || ''} disabled /></div>
+                                    </div>
+                                </>
+                            )}
 
                             <div className="modal-footer">
                                 <button type="button" className="btn" onClick={onClose}>取消</button>
@@ -3010,16 +3458,14 @@
             };
 
             const statusClass = (status) => {
-                if (status === '已受理') return 'status-success';
-                if (status === '已拒绝') return 'status-danger';
+                if (status === '已受理' || status === '审核通过') return 'status-success';
+                if (status === '已拒绝' || status === '审核不通过') return 'status-danger';
                 return 'status-warning';
             };
 
-            // Get announcements that I haven't registered for yet
+            // 暂不开放企业线上报名，报名企业由学校线下收集后录入。
             const myRegAnnouncementIds = registrations.map(r => r.announcementId);
-            const availableAnnouncements = announcements.filter(a =>
-                (a.status === '已发布' || a.status === '遴选中') && !myRegAnnouncementIds.includes(a.id)
-            );
+            const availableAnnouncements = [];
 
             const isRegistered = (announcementId) => registrations.some(r => r.announcementId === announcementId);
             const getRegistrationStatus = (announcementId) => {
@@ -3041,7 +3487,7 @@
                             我的报名 ({registrations.length})
                         </button>
                         <button className={`tab ${activeTab === 'available' ? 'active' : ''}`} onClick={() => setActiveTab('available')}>
-                            可报名公告 ({availableAnnouncements.length})
+                            可报名公告（暂未开放）
                         </button>
                     </div>
 
@@ -3079,7 +3525,7 @@
                                             </td>
                                         </tr>
                                     ))}
-                                    {availableAnnouncements.length === 0 && <tr><td colSpan="6" className="empty">暂无可报名公告</td></tr>}
+                                    {availableAnnouncements.length === 0 && <tr><td colSpan="6" className="empty">暂不开放企业线上报名，请按学校公告线下报名</td></tr>}
                                 </tbody>
                             </table>
                         )
@@ -3143,7 +3589,7 @@
                     </div>
                     {loading ? <div className="loading">加载中...</div> : (
                         <table className="data-table">
-                            <thead><tr><th>合同编号</th><th>企业名称</th><th>学校</th><th>合同期间</th><th>金额</th><th>状态</th></tr></thead>
+                            <thead><tr><th>合同编号</th><th>企业名称</th><th>学校</th><th>合同期间</th><th>金额</th><th>餐标</th><th>用餐人数</th><th>状态</th></tr></thead>
                             <tbody>
                                 {contracts.map(c => (
                                     <tr key={c.id}>
@@ -3152,10 +3598,12 @@
                                         <td>{c.schoolName}</td>
                                         <td>{c.contractStartDate} 至 {c.contractEndDate}</td>
                                         <td>{c.contractAmount} {c.contractUnit}</td>
+                                        <td>{c.mealStandard || '-'}</td>
+                                        <td>{c.dinerCount || '-'}</td>
                                         <td><span className={`status-badge status-${c.status}`}>{c.status}</span></td>
                                     </tr>
                                 ))}
-                                {contracts.length === 0 && <tr><td colSpan="6" className="empty">暂无遴选合同</td></tr>}
+                                {contracts.length === 0 && <tr><td colSpan="8" className="empty">暂无遴选合同</td></tr>}
                             </tbody>
                         </table>
                     )}
@@ -3168,6 +3616,9 @@
             const [announcements, setAnnouncements] = useState([]);
             const [loading, setLoading] = useState(true);
             const [statusFilter, setStatusFilter] = useState('');
+            const [activeTab, setActiveTab] = useState('list');
+            const [workflowDetail, setWorkflowDetail] = useState(null);
+            const [workflowLoading, setWorkflowLoading] = useState(false);
             const { user } = useAuth();
 
             const loadData = () => {
@@ -3178,41 +3629,162 @@
             useEffect(() => { loadData(); }, []);
 
             const filtered = announcements.filter(a => !statusFilter || a.status === statusFilter);
+            const selectedAnnouncement = workflowDetail?.announcement;
+            const statusToStep = (status) => ({
+                '项目已立项': 1,
+                '草稿': 1,
+                '已发布': 1,
+                '报名审核中': 2,
+                '备选确认中': 3,
+                '考察中': 4,
+                '入围确认中': 5,
+                '家长投票中': 6,
+                '待签合同': 7,
+                '已完成': 8
+            }[status] || 1);
+
+            const openWorkflow = async (announcement) => {
+                setWorkflowLoading(true);
+                setActiveTab('workflow');
+                const detail = await apiFetch(`/selection/announcements/${announcement.id}/workflow`);
+                if (detail) setWorkflowDetail(detail);
+                setWorkflowLoading(false);
+            };
+
+            const renderEmpty = (colSpan, text) => <tr><td colSpan={colSpan} className="empty">{text}</td></tr>;
 
             return (
                 <div className="page-container">
-                    <div className="page-header">
+                    {activeTab === 'list' ? (
+                        <>
+                            <div className="page-header">
+                                <div>
+                                    <h2>遴选管理</h2>
+                                    <p className="subtitle">共 {filtered.length} 条遴选公告</p>
+                                </div>
+                            </div>
+                            <div className="filter-bar">
+                                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                                    <option value="">全部状态</option>
+                                    <option value="项目已立项">项目已立项</option>
+                                    <option value="报名审核中">报名审核中</option>
+                                    <option value="考察中">考察中</option>
+                                    <option value="家长投票中">家长投票中</option>
+                                    <option value="待签合同">待签合同</option>
+                                    <option value="已完成">已完成</option>
+                                </select>
+                            </div>
+                            {loading ? <div className="loading">加载中...</div> : (
+                                <table className="data-table">
+                                    <thead><tr><th>项目编号</th><th>学校</th><th>服务类型</th><th>项目名称</th><th>报名截止</th><th>状态</th><th>操作</th></tr></thead>
+                                    <tbody>
+                                        {filtered.map(a => (
+                                            <tr key={a.id}>
+                                                <td>{a.announcementNo}</td>
+                                                <td>{a.schoolName}</td>
+                                                <td>{a.serviceType}</td>
+                                                <td>{a.title}</td>
+                                                <td>{a.registrationDeadline}</td>
+                                                <td><span className={`status-badge status-${a.status}`}>{a.status}</span></td>
+                                                <td><button className="btn-small btn-primary" onClick={() => openWorkflow(a)}>查看流程</button></td>
+                                            </tr>
+                                        ))}
+                                        {filtered.length === 0 && <tr><td colSpan="7" className="empty">暂无遴选公告</td></tr>}
+                                    </tbody>
+                                </table>
+                            )}
+                        </>
+                    ) : (
                         <div>
-                            <h2>遴选管理</h2>
-                            <p className="subtitle">共 {filtered.length} 条遴选公告</p>
+                            <div className="page-header" style={{marginBottom: '16px'}}>
+                                <button className="btn" onClick={() => setActiveTab('list')}>返回</button>
+                                <div>
+                                    <h2>{selectedAnnouncement?.title || '遴选流程详情'}</h2>
+                                    <p className="subtitle">{selectedAnnouncement?.schoolName || ''} · 全流程只读数据</p>
+                                </div>
+                            </div>
+                            {workflowLoading ? <div className="loading">加载中...</div> : workflowDetail && (
+                                <>
+                                    <SelectionWorkflowStepper currentStep={statusToStep(selectedAnnouncement?.status)} />
+
+                                    <div className="workflow-section">
+                                        <h4>① 发布公告</h4>
+                                        <div className="info-item"><span>项目编号</span><span>{selectedAnnouncement?.announcementNo || '-'}</span></div>
+                                        <div className="info-item"><span>学校</span><span>{selectedAnnouncement?.schoolName || '-'}</span></div>
+                                        <div className="info-item"><span>服务类型</span><span>{selectedAnnouncement?.serviceType || '-'}</span></div>
+                                        <div className="info-item"><span>状态</span><span className={`status-badge status-${selectedAnnouncement?.status}`}>{selectedAnnouncement?.status || '-'}</span></div>
+                                        <div className="info-item"><span>发布时间</span><span>{selectedAnnouncement?.publishTime ? selectedAnnouncement.publishTime.split('T')[0] : '-'}</span></div>
+                                        <div className="info-item"><span>公告网址</span><span>{selectedAnnouncement?.publishUrl || '-'}</span></div>
+                                    </div>
+
+                                    <div className="workflow-section">
+                                        <h4>② 报名审核</h4>
+                                        <table className="data-table">
+                                            <thead><tr><th>报名编号</th><th>企业名称</th><th>联系人</th><th>联系电话</th><th>状态</th><th>审核意见</th></tr></thead>
+                                            <tbody>
+                                                {workflowDetail.registrations.map(r => <tr key={r.id}><td>{r.registrationNo}</td><td>{r.enterpriseName}</td><td>{r.contactPerson || '-'}</td><td>{r.contactPhone || '-'}</td><td>{r.status}</td><td>{r.reviewComments || '-'}</td></tr>)}
+                                                {workflowDetail.registrations.length === 0 && renderEmpty(6, '暂无报名数据')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div className="workflow-section">
+                                        <h4>③ 备选企业</h4>
+                                        <table className="data-table">
+                                            <thead><tr><th>确认时间</th><th>确定方式</th><th>备选企业</th></tr></thead>
+                                            <tbody>
+                                                {workflowDetail.candidates.map(c => <tr key={c.id}><td>{c.confirmationTime?.split('T')[0] || '-'}</td><td>{c.determinationMethod || '-'}</td><td>{(c.confirmedEnterprises || []).map(e => e.enterpriseName).join('、') || '-'}</td></tr>)}
+                                                {workflowDetail.candidates.length === 0 && renderEmpty(3, '暂无备选企业数据')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div className="workflow-section">
+                                        <h4>④ 考察记录</h4>
+                                        <table className="data-table">
+                                            <thead><tr><th>企业名称</th><th>考察时间</th><th>考察地点</th><th>考察人员</th><th>结果</th><th>结论</th></tr></thead>
+                                            <tbody>
+                                                {workflowDetail.inspections.map(i => <tr key={i.id}><td>{i.enterpriseName}</td><td>{i.inspectionTime || '-'}</td><td>{i.inspectionLocation || '-'}</td><td>{i.inspectors || '-'}</td><td>{i.passed === true ? '通过' : i.passed === false ? '不通过' : '未确认'}</td><td>{i.inspectionResult || i.passComments || '-'}</td></tr>)}
+                                                {workflowDetail.inspections.length === 0 && renderEmpty(6, '暂无考察记录')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div className="workflow-section">
+                                        <h4>⑤ 入围企业</h4>
+                                        <table className="data-table">
+                                            <thead><tr><th>确认时间</th><th>状态</th><th>入围企业</th></tr></thead>
+                                            <tbody>
+                                                {workflowDetail.shortlisted.map(s => <tr key={s.id}><td>{s.shortlistTime?.split('T')[0] || '-'}</td><td>{s.status || '-'}</td><td>{(s.shortlistedEnterprises || []).map(e => e.enterpriseName).join('、') || '-'}</td></tr>)}
+                                                {workflowDetail.shortlisted.length === 0 && renderEmpty(3, '暂无入围企业数据')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div className="workflow-section">
+                                        <h4>⑥ 家长投票结果</h4>
+                                        <table className="data-table">
+                                            <thead><tr><th>轮次</th><th>时间</th><th>地点</th><th>到位人数</th><th>有效票</th><th>状态</th><th>结果</th></tr></thead>
+                                            <tbody>
+                                                {workflowDetail.results.map(r => <tr key={r.id}><td>第 {r.roundNo || 1} 轮</td><td>{r.voteTime || '-'}</td><td>{r.voteLocation || '-'}</td><td>{r.parentAttendance || '-'}</td><td>{r.validVotes || '-'}</td><td>{r.status || '-'}</td><td>{r.winningEnterprise ? `中标：${r.winningEnterprise.enterpriseName}` : `需二次投票：${(r.revoteEnterprises || []).map(e => e.enterpriseName).join('、') || '-'}`}</td></tr>)}
+                                                {workflowDetail.results.length === 0 && renderEmpty(7, '暂无投票结果')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div className="workflow-section">
+                                        <h4>⑦ 遴选合同</h4>
+                                        <table className="data-table">
+                                            <thead><tr><th>合同编号</th><th>企业名称</th><th>合同期间</th><th>金额</th><th>餐标</th><th>用餐人数</th><th>状态</th></tr></thead>
+                                            <tbody>
+                                                {workflowDetail.contracts.map(c => <tr key={c.id}><td>{c.contractNo}</td><td>{c.enterpriseName}</td><td>{c.contractStartDate || '-'} 至 {c.contractEndDate || '-'}</td><td>{c.contractAmount || '-'} {c.contractUnit || ''}</td><td>{c.mealStandard || '-'}</td><td>{c.dinerCount || '-'}</td><td>{c.status || '-'}</td></tr>)}
+                                                {workflowDetail.contracts.length === 0 && renderEmpty(7, '暂无合同数据')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
                         </div>
-                    </div>
-                    <div className="filter-bar">
-                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                            <option value="">全部状态</option>
-                            <option value="草稿">草稿</option>
-                            <option value="已发布">已发布</option>
-                            <option value="遴选中">遴选中</option>
-                            <option value="已结束">已结束</option>
-                        </select>
-                    </div>
-                    {loading ? <div className="loading">加载中...</div> : (
-                        <table className="data-table">
-                            <thead><tr><th>公告编号</th><th>学校</th><th>服务类型</th><th>公告标题</th><th>报名截止</th><th>状态</th></tr></thead>
-                            <tbody>
-                                {filtered.map(a => (
-                                    <tr key={a.id}>
-                                        <td>{a.announcementNo}</td>
-                                        <td>{a.schoolName}</td>
-                                        <td>{a.serviceType}</td>
-                                        <td>{a.title}</td>
-                                        <td>{a.registrationDeadline}</td>
-                                        <td><span className={`status-badge status-${a.status}`}>{a.status}</span></td>
-                                    </tr>
-                                ))}
-                                {filtered.length === 0 && <tr><td colSpan="6" className="empty">暂无遴选公告</td></tr>}
-                            </tbody>
-                        </table>
                     )}
                 </div>
             );
@@ -4536,6 +5108,490 @@
             );
         }
 
+        // ============ Location Map Page ============
+        function LocationMapPage() {
+            const [schools, setSchools] = useState([]);
+            const [canteens, setCanteens] = useState([]);
+            const [cateringCompanies, setCateringCompanies] = useState([]);
+            const [ingredientSuppliers, setIngredientSuppliers] = useState([]);
+            const [announcements, setAnnouncements] = useState([]);
+            const [registrations, setRegistrations] = useState([]);
+            const [candidates, setCandidates] = useState([]);
+            const [shortlisted, setShortlisted] = useState([]);
+            const [results, setResults] = useState([]);
+            const [selectionContracts, setSelectionContracts] = useState([]);
+            const [enterpriseScope, setEnterpriseScope] = useState('all');
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState('');
+            const { user } = useAuth();
+
+            useEffect(() => {
+                async function loadBoardData() {
+                    try {
+                        const [s, c, cat, ing, ann, cand, short, res, ctr] = await Promise.all([
+                            apiFetch('/schools'),
+                            apiFetch('/canteens'),
+                            apiFetch('/catering-companies'),
+                            apiFetch('/ingredient-suppliers'),
+                            apiFetch('/selection/announcements'),
+                            apiFetch('/selection/candidates'),
+                            apiFetch('/selection/shortlisted'),
+                            apiFetch('/selection/results'),
+                            apiFetch('/selection/contracts')
+                        ]);
+                        const listAnnouncements = ann || [];
+                        const activeAnnouncement = listAnnouncements
+                            .filter(a => !['已完成', '作废', '已终止'].includes(a.status))
+                            .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0];
+                        let reg = [];
+                        if (activeAnnouncement) {
+                            reg = await apiFetch('/selection/announcements/' + activeAnnouncement.id + '/registrations') || [];
+                        }
+                        if (s) setSchools(s);
+                        if (c) setCanteens(c);
+                        if (cat) setCateringCompanies(cat);
+                        if (ing) setIngredientSuppliers(ing);
+                        setAnnouncements(listAnnouncements);
+                        setRegistrations(reg);
+                        setCandidates(cand || []);
+                        setShortlisted(short || []);
+                        setResults(res || []);
+                        setSelectionContracts(ctr || []);
+                        setLoading(false);
+                    } catch (e) {
+                        setError('加载数据失败');
+                        setLoading(false);
+                    }
+                }
+                loadBoardData();
+            }, []);
+
+            const mySchool = schools.find(s => s.id === user?.schoolId);
+            const myCanteens = canteens.filter(c => c.schoolId === user?.schoolId && c.academicYear === '2025-2026');
+            const hasExternal = (mySchool?.供餐类型 || []).includes('校外供餐');
+            const selfOp = myCanteens.some(c => c.operationMode === '自营');
+            const delegateOp = myCanteens.some(c => c.operationMode === '委托经营');
+
+            let showType = 'none';
+            if (hasExternal) showType = 'catering';
+            else if (selfOp) showType = 'ingredient';
+            else if (delegateOp) showType = 'none';
+
+            const allCompanies = showType === 'catering' ? cateringCompanies : (showType === 'ingredient' ? ingredientSuppliers : []);
+            const activeAnnouncement = announcements
+                .filter(a => !['已完成', '作废', '已终止'].includes(a.status))
+                .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0];
+            const latestCandidate = activeAnnouncement ? candidates.find(c => c.announcementId === activeAnnouncement.id) : null;
+            const latestShortlisted = activeAnnouncement ? shortlisted.find(s => s.announcementId === activeAnnouncement.id) : null;
+
+            let relatedEnterpriseIds = [];
+            let relatedSource = '';
+            if (activeAnnouncement) {
+                if (['已发布', '报名审核中'].includes(activeAnnouncement.status)) {
+                    relatedEnterpriseIds = registrations.map(r => r.enterpriseId);
+                    relatedSource = '当前项目处于报名阶段，显示报名企业';
+                } else if (['备选确认中', '考察中', '重新发布'].includes(activeAnnouncement.status)) {
+                    relatedEnterpriseIds = (latestCandidate?.confirmedEnterprises || []).map(e => e.enterpriseId);
+                    if (relatedEnterpriseIds.length === 0) relatedEnterpriseIds = registrations.filter(r => r.status === '审核通过' || r.status === '已受理').map(r => r.enterpriseId);
+                    relatedSource = '当前项目处于备选/考察阶段，显示备选企业';
+                } else if ((activeAnnouncement.status || '').includes('入围') || (activeAnnouncement.status || '').includes('中标') || (activeAnnouncement.status || '').includes('投票') || activeAnnouncement.status === '待签合同') {
+                    relatedEnterpriseIds = (latestShortlisted?.shortlistedEnterprises || []).map(e => e.enterpriseId);
+                    relatedSource = '当前项目处于入围/家长投票阶段，显示入围供应商';
+                }
+            } else {
+                relatedEnterpriseIds = results.map(r => r.winningEnterprise?.enterpriseId).filter(Boolean);
+                if (relatedEnterpriseIds.length === 0) relatedEnterpriseIds = selectionContracts.map(c => c.enterpriseId).filter(Boolean);
+                relatedSource = '暂无进行中的遴选项目，显示中标供应商';
+            }
+            const relatedIdSet = new Set(relatedEnterpriseIds);
+            const companies = enterpriseScope === 'related'
+                ? allCompanies.filter(company => relatedIdSet.has(company.id))
+                : allCompanies;
+            const signedSchoolCountMap = selectionContracts.reduce((acc, contract) => {
+                if (!contract.enterpriseId || !contract.schoolId) return acc;
+                if (!acc[contract.enterpriseId]) acc[contract.enterpriseId] = new Set();
+                acc[contract.enterpriseId].add(contract.schoolId);
+                return acc;
+            }, {});
+            const getEnterpriseMetrics = (company) => {
+                const capacity = parseFloat(company.dailyCapacity || 0) || 0;
+                const used = parseFloat(company.currentSupply || 0) || 0;
+                const remaining = capacity ? Math.max(capacity - used, 0) : null;
+                return {
+                    signedSchools: signedSchoolCountMap[company.id]?.size || 0,
+                    capacity: capacity ? capacity.toLocaleString() : '-',
+                    remaining: remaining !== null ? remaining.toLocaleString() : '-'
+                };
+            };
+
+            useEffect(() => {
+                if (loading || !window.AMap) return;
+                const mapContainer = document.getElementById('mapContainer');
+                if (!mapContainer) return;
+
+                const center = mySchool?.lng && mySchool?.lat
+                    ? [parseFloat(mySchool.lng), parseFloat(mySchool.lat)]
+                    : [118.796677, 24.873887];
+
+                if (mapContainer._map) {
+                    mapContainer._map.destroy();
+                }
+                const baseLayer = new AMap.TileLayer({
+                    zooms: [3, 20],
+                    opacity: 1,
+                    visible: true
+                });
+                const map = new AMap.Map('mapContainer', {
+                    zoom: 12,
+                    center: center,
+                    viewMode: '2D',
+                    zooms: [3, 20],
+                    resizeEnable: true,
+                    showLabel: true,
+                    features: ['bg', 'road', 'building', 'point'],
+                    mapStyle: 'amap://styles/normal',
+                    layers: [baseLayer]
+                });
+                mapContainer._map = map;
+
+                // 创建学校标记（蓝色）
+                if (mySchool?.lng && mySchool?.lat) {
+                    const schoolMarker = new AMap.Marker({
+                        position: [parseFloat(mySchool.lng), parseFloat(mySchool.lat)],
+                        content: '<div style="background:#3B82F6;color:white;padding:4px 8px;border-radius:12px;font-size:12px;font-weight:bold;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.3);"><span style="display:inline-block;width:8px;height:8px;background:#1D4ED8;border-radius:50%;margin-right:4px;"></span>本校</div>',
+                        offset: new AMap.Pixel(-30, -20)
+                    });
+                    const infoWindow = new AMap.InfoWindow({
+                        content: '<div class="map-info"><h4>' + mySchool.name + '</h4><p>地址：' + (mySchool.address || '-') + '</p><p>联系人：' + (mySchool.contact || '-') + '</p><p>电话：' + (mySchool.phone || '-') + '</p></div>',
+                        offset: new AMap.Pixel(0, -30)
+                    });
+                    schoolMarker.on('click', function() { infoWindow.open(map, schoolMarker.getPosition()); });
+                    map.add(schoolMarker);
+                }
+
+                // 创建企业标记
+                const iconMap = { catering: { color: '#F97316', label: '校外供餐' }, ingredient: { color: '#16A34A', label: '食材' } };
+                const cfg = iconMap[showType] || { color: '#16A34A', label: '' };
+
+                companies.forEach(company => {
+                    if (!company.lng || !company.lat) return;
+                    const metrics = getEnterpriseMetrics(company);
+                    const marker = new AMap.Marker({
+                        position: [parseFloat(company.lng), parseFloat(company.lat)],
+                        content: '<div style="background:' + cfg.color + ';color:white;padding:3px 6px;border-radius:10px;font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.25);"><span style="display:inline-block;width:6px;height:6px;background:white;border-radius:50%;margin-right:3px;"></span>' + company.name + '</div>',
+                        offset: new AMap.Pixel(-40, -18)
+                    });
+                    const infoWindow = new AMap.InfoWindow({
+                        content: '<div class="map-info"><h4>' + company.name + '</h4><p>地址：' + (company.address || '-') + '</p><p>联系人：' + (company.contact || '-') + '</p><p>电话：' + (company.phone || '-') + '</p><p>已签订学校数：' + metrics.signedSchools + '</p><p>日最大供应量：' + metrics.capacity + '</p><p>剩余供应量：' + metrics.remaining + '</p></div>',
+                        offset: new AMap.Pixel(0, -30)
+                    });
+                    marker.on('click', function() { infoWindow.open(map, marker.getPosition()); });
+                    map.add(marker);
+                });
+
+                // 自适应视野
+                if (companies.length > 0) {
+                    map.setFitView();
+                }
+            }, [loading, schools, companies, showType]);
+
+            if (loading) return <div className="page-loading">加载中...</div>;
+            if (error) return <div className="page-error">{error}</div>;
+
+            return (
+                <div>
+                    <div className="page-header">
+                        <div className="page-title">企业看板</div>
+                        <div className="page-breadcrumb">
+                            {showType === 'none' ? '委托经营学校暂不显示企业看板' : '显示' + (showType === 'catering' ? '校外供餐企业' : '食材供应商') + '位置'}
+                        </div>
+                    </div>
+                    <div className="card">
+                        <div className="card-body">
+                            {mySchool ? (
+                                <div className="map-school-card">
+                                    <div className="map-school-name">{mySchool.name}</div>
+                                    <div className="map-school-info">地址：{mySchool.address || '-'}</div>
+                                    <div className="map-school-info">坐标：{mySchool.lng && mySchool.lat ? mySchool.lng + ', ' + mySchool.lat : '暂无坐标'}</div>
+                                    <div className="map-school-type">{hasExternal ? '校外供餐' : (selfOp ? '自营食堂' : (delegateOp ? '委托经营' : '未分类'))}</div>
+                                </div>
+                            ) : <div className="map-school-card">未找到本校信息</div>}
+
+                            {showType === 'none' ? (
+                                <div className="map-empty">委托经营学校暂不支持企业看板功能</div>
+                            ) : (
+                                <>
+                                    <div className="enterprise-board-toolbar">
+                                        <div className="enterprise-board-tabs">
+                                            <button className={'enterprise-board-tab ' + (enterpriseScope === 'all' ? 'active' : '')} onClick={() => setEnterpriseScope('all')}>全部企业</button>
+                                            <button className={'enterprise-board-tab ' + (enterpriseScope === 'related' ? 'active' : '')} onClick={() => setEnterpriseScope('related')}>相关企业</button>
+                                        </div>
+                                        <div className="enterprise-board-hint">
+                                            {enterpriseScope === 'related' ? relatedSource : '显示所有可选企业'}
+                                        </div>
+                                    </div>
+                                    <div id="mapContainer" className="map-container"></div>
+                                    <div className="map-legend">
+                                        <div className="legend-item"><span className="legend-dot school"></span>本校位置</div>
+                                        <div className="legend-item"><span className="legend-dot company"></span>{showType === 'catering' ? '校外供餐企业' : '食材供应商'}</div>
+                                    </div>
+                                    <div className="enterprise-table-wrap">
+                                        <table className="enterprise-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>企业名称</th>
+                                                    <th>地址</th>
+                                                    <th>联系人</th>
+                                                    <th>联系电话</th>
+                                                    <th>已签订学校数</th>
+                                                    <th>日最大供应量</th>
+                                                    <th>剩余供应量</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {companies.map(company => {
+                                                    const metrics = getEnterpriseMetrics(company);
+                                                    return (
+                                                        <tr key={company.id}>
+                                                            <td className="enterprise-table-name">{company.name}</td>
+                                                            <td className="enterprise-table-address" title={company.address || '-'}>{company.address || '-'}</td>
+                                                            <td>{company.contact || company.contactPerson || '-'}</td>
+                                                            <td>{company.phone || company.contactPhone || '-'}</td>
+                                                            <td className="enterprise-table-number">{metrics.signedSchools}</td>
+                                                            <td className="enterprise-table-number">{metrics.capacity}</td>
+                                                            <td className="enterprise-table-number">{metrics.remaining}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {companies.length === 0 && <div className="map-empty">暂无符合条件的企业</div>}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ Coordinate Management Page ============
+        function CoordinateManagementPage() {
+            const { currentYear } = useAcademicYear();
+            const [records, setRecords] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [search, setSearch] = useState('');
+            const [typeFilter, setTypeFilter] = useState('all');
+            const [coordFilter, setCoordFilter] = useState('all');
+            const [updatingId, setUpdatingId] = useState('');
+            const [toast, setToast] = useState(null);
+
+            const typeMeta = {
+                school: { label: '学校', api: '/schools', geocodeType: 'school', color: '#3B82F6', badge: 'badge-blue' },
+                cateringCompany: { label: '校外供餐企业', api: '/catering-companies', geocodeType: 'cateringCompany', color: '#F97316', badge: 'badge-yellow' },
+                ingredientSupplier: { label: '食材供应商', api: '/ingredient-suppliers', geocodeType: 'ingredientSupplier', color: '#16A34A', badge: 'badge-green' },
+                operationSupplier: { label: '委托经营供应商', api: '/operation-suppliers', geocodeType: 'operationSupplier', color: '#7C3AED', badge: 'badge-purple' },
+                serviceSupplier: { label: '委托服务提供商', api: '/service-suppliers', geocodeType: 'serviceSupplier', color: '#0F766E', badge: 'badge-green' }
+            };
+
+            const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+
+            const normalizeRecord = (item, typeKey) => {
+                const meta = typeMeta[typeKey];
+                return {
+                    ...item,
+                    coordType: typeKey,
+                    coordTypeLabel: meta.label,
+                    geocodeType: meta.geocodeType,
+                    markerColor: meta.color,
+                    badgeClass: meta.badge,
+                    coordKey: `${typeKey}-${item.id}`,
+                    address: item.address || item.foodLicenseAddress || ''
+                };
+            };
+
+            const loadData = async () => {
+                setLoading(true);
+                try {
+                    const schoolApi = currentYear ? `/schools?academicYear=${encodeURIComponent(currentYear)}` : '/schools';
+                    const [schools, catering, ingredient, operation, service] = await Promise.all([
+                        apiFetch(schoolApi),
+                        apiFetch('/catering-companies'),
+                        apiFetch('/ingredient-suppliers'),
+                        apiFetch('/operation-suppliers'),
+                        apiFetch('/service-suppliers')
+                    ]);
+                    setRecords([
+                        ...(schools || []).map(item => normalizeRecord(item, 'school')),
+                        ...(catering || []).map(item => normalizeRecord(item, 'cateringCompany')),
+                        ...(ingredient || []).map(item => normalizeRecord(item, 'ingredientSupplier')),
+                        ...(operation || []).map(item => normalizeRecord(item, 'operationSupplier')),
+                        ...(service || []).map(item => normalizeRecord(item, 'serviceSupplier'))
+                    ]);
+                } catch (e) {
+                    setToast({ message: e.message || '坐标数据加载失败', type: 'error' });
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => { loadData(); }, [currentYear]);
+
+            const filtered = records.filter(item => {
+                const hasCoord = item.lng && item.lat;
+                const keyword = search.trim();
+                const matchesType = typeFilter === 'all' || item.coordType === typeFilter;
+                const matchesCoord = coordFilter === 'all' || (coordFilter === 'has' ? hasCoord : !hasCoord);
+                const matchesKeyword = !keyword
+                    || (item.name || '').includes(keyword)
+                    || (item.code || '').includes(keyword)
+                    || (item.address || '').includes(keyword)
+                    || (item.region || '').includes(keyword);
+                return matchesType && matchesCoord && matchesKeyword;
+            });
+            const withCoords = filtered.filter(item => item.lng && item.lat);
+            const missingCoords = filtered.length - withCoords.length;
+
+            useEffect(() => {
+                if (loading || !window.AMap) return;
+                const mapContainer = document.getElementById('coordinateMapContainer');
+                if (!mapContainer) return;
+                if (mapContainer._map) mapContainer._map.destroy();
+
+                const firstPoint = withCoords[0];
+                const center = firstPoint ? [parseFloat(firstPoint.lng), parseFloat(firstPoint.lat)] : [118.796677, 24.873887];
+                const map = new AMap.Map('coordinateMapContainer', {
+                    zoom: firstPoint ? 12 : 10,
+                    center,
+                    viewMode: '2D',
+                    resizeEnable: true,
+                    showLabel: true,
+                    features: ['bg', 'road', 'building', 'point'],
+                    mapStyle: 'amap://styles/normal'
+                });
+                mapContainer._map = map;
+
+                const markers = withCoords.map(item => {
+                    const marker = new AMap.Marker({
+                        position: [parseFloat(item.lng), parseFloat(item.lat)],
+                        content: '<div style="background:' + item.markerColor + ';color:white;padding:3px 7px;border-radius:10px;font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,0.25);">' + escapeHtml(item.name) + '</div>',
+                        offset: new AMap.Pixel(-34, -18)
+                    });
+                    const infoWindow = new AMap.InfoWindow({
+                        content: '<div class="map-info"><h4>' + escapeHtml(item.name) + '</h4><p>类型：' + escapeHtml(item.coordTypeLabel) + '</p><p>地址：' + escapeHtml(item.address || '-') + '</p><p>坐标：' + escapeHtml(item.lng) + ', ' + escapeHtml(item.lat) + '</p></div>',
+                        offset: new AMap.Pixel(0, -30)
+                    });
+                    marker.on('click', function() { infoWindow.open(map, marker.getPosition()); });
+                    map.add(marker);
+                    return marker;
+                });
+                if (markers.length > 0) map.setFitView(markers);
+            }, [loading, records, search, typeFilter, coordFilter]);
+
+            const updateCoordinate = async (item) => {
+                if (!item.address) {
+                    setToast({ message: '地址为空，无法更新坐标', type: 'error' });
+                    return;
+                }
+                setUpdatingId(item.coordKey);
+                try {
+                    const result = await apiFetch(`/geocode/${item.geocodeType}/${item.id}`, { method: 'PUT' });
+                    setRecords(prev => prev.map(record => record.coordKey === item.coordKey
+                        ? { ...record, lng: String(result.lng), lat: String(result.lat) }
+                        : record
+                    ));
+                    setToast({ message: '坐标更新成功', type: 'success' });
+                } catch (e) {
+                    setToast({ message: e.message || '坐标更新失败', type: 'error' });
+                } finally {
+                    setUpdatingId('');
+                }
+            };
+
+            if (loading) return <div className="page-loading">加载中...</div>;
+
+            return (
+                <div>
+                    <div className="page-header">
+                        <div>
+                            <div className="page-title">坐标管理</div>
+                            <div className="page-breadcrumb">统一查看学校、企业地址和地图坐标</div>
+                        </div>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-body">
+                            <div className="coordinate-toolbar">
+                                <div className="filter-bar" style={{marginBottom:0}}>
+                                    <input className="search-input" placeholder="搜索名称/代码/地址/区域..." value={search} onChange={e => setSearch(e.target.value)} />
+                                    <select className="filter-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                                        <option value="all">全部类型</option>
+                                        {Object.entries(typeMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+                                    </select>
+                                    <select className="filter-select" value={coordFilter} onChange={e => setCoordFilter(e.target.value)}>
+                                        <option value="all">全部坐标状态</option>
+                                        <option value="has">已有坐标</option>
+                                        <option value="missing">缺少坐标</option>
+                                    </select>
+                                    <button className="btn btn-secondary" onClick={loadData}>刷新</button>
+                                </div>
+                                <div className="coordinate-stats">
+                                    <div className="coordinate-stat">当前记录<strong>{filtered.length}</strong></div>
+                                    <div className="coordinate-stat">已有坐标<strong>{withCoords.length}</strong></div>
+                                    <div className="coordinate-stat">缺少坐标<strong>{missingCoords}</strong></div>
+                                </div>
+                            </div>
+
+                            <div id="coordinateMapContainer" className="map-container coordinate-map"></div>
+
+                            <div className="enterprise-table-wrap">
+                                <table className="enterprise-table">
+                                    <thead>
+                                        <tr>
+                                            <th>名称</th>
+                                            <th>类型</th>
+                                            <th>地址</th>
+                                            <th>经度</th>
+                                            <th>纬度</th>
+                                            <th>坐标状态</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.length === 0 && (
+                                            <tr><td colSpan="7" style={{textAlign:'center',color:'#999',padding:'40px'}}>暂无数据</td></tr>
+                                        )}
+                                        {filtered.map(item => {
+                                            const hasCoord = item.lng && item.lat;
+                                            const isUpdating = updatingId === item.coordKey;
+                                            return (
+                                                <tr key={item.coordKey}>
+                                                    <td className="coordinate-name">{item.name || '-'}</td>
+                                                    <td><span className={`badge ${item.badgeClass}`}>{item.coordTypeLabel}</span></td>
+                                                    <td className="coordinate-address" title={item.address || '-'}>{item.address || '-'}</td>
+                                                    <td className="coordinate-value">{item.lng || '-'}</td>
+                                                    <td className="coordinate-value">{item.lat || '-'}</td>
+                                                    <td><span className={`badge ${hasCoord ? 'badge-green' : 'badge-gray'}`}>{hasCoord ? '已有坐标' : '缺少坐标'}</span></td>
+                                                    <td>
+                                                        <button className="btn btn-secondary btn-sm" disabled={isUpdating || !item.address} onClick={() => updateCoordinate(item)}>
+                                                            {isUpdating ? '更新中...' : '从地址更新坐标'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+                </div>
+            );
+        }
+
         // ============ Main App ============
         function App() {
             const [currentPage, setCurrentPage] = useState('dashboard');
@@ -4562,6 +5618,8 @@
                     case 'myInfo': return <MyInfoPage />;
                     case 'selections': return <SelectionsPage />;
                     case 'selectionContracts': return <SelectionContractsPage />;
+                    case 'locationMap': return <LocationMapPage />;
+                    case 'coordinateManagement': return <CoordinateManagementPage />;
                     case 'myRegistrations': return <MyRegistrationsPage />;
                     case 'allSelections': return <AllSelectionsPage />;
                     default: return <Dashboard />;

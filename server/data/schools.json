@@ -9,7 +9,7 @@
     "studentCount": "1200",
     "staffCount": "85",
     "type": "高中",
-    "address": "晋江市青阳街道和平路1号",
+    "address": "福建省晋江市青阳街道鼓声路1号",
     "营养改善计划": "否",
     "department": "晋江市教育局",
     "leader": "张明",
@@ -21,7 +21,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.319Z",
-    "updatedAt": "2026-05-05T12:27:55.319Z"
+    "updatedAt": "2026-05-30T16:00:42.536Z",
+    "lng": "118.583475",
+    "lat": "24.820222"
   },
   {
     "id": "school_1777984075322",
@@ -33,7 +35,7 @@
     "studentCount": "980",
     "staffCount": "72",
     "type": "初中",
-    "address": "晋江市梅岭街道胜利路2号",
+    "address": "福建省泉州市晋江市池店镇池店村凤西区200号",
     "营养改善计划": "是",
     "department": "晋江市教育局",
     "leader": "李华",
@@ -45,7 +47,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.322Z",
-    "updatedAt": "2026-05-05T12:27:55.322Z"
+    "updatedAt": "2026-05-30T16:20:34.586Z",
+    "lng": "118.562396",
+    "lat": "24.852652"
   },
   {
     "id": "school_1777984075325",
@@ -57,7 +61,7 @@
     "studentCount": "650",
     "staffCount": "45",
     "type": "小学",
-    "address": "晋江市西园街道建设路3号",
+    "address": "晋江市池店镇池峰路242号",
     "营养改善计划": "否",
     "department": "晋江市教育局",
     "leader": "王芳",
@@ -69,7 +73,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.325Z",
-    "updatedAt": "2026-05-05T12:27:55.325Z"
+    "updatedAt": "2026-05-30T16:24:32.284Z",
+    "lng": "118.576549",
+    "lat": "24.808118"
   },
   {
     "id": "school_1777984075327",
@@ -81,7 +87,7 @@
     "studentCount": "580",
     "staffCount": "38",
     "type": "小学",
-    "address": "晋江市罗山街道开发路4号",
+    "address": "福建省泉州市晋江市西园街道王厝北区21号",
     "营养改善计划": "否",
     "department": "晋江市教育局",
     "leader": "陈强",
@@ -93,7 +99,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.327Z",
-    "updatedAt": "2026-05-05T12:27:55.327Z"
+    "updatedAt": "2026-06-04T15:27:26.601Z",
+    "lng": "118.559918",
+    "lat": "24.829232"
   },
   {
     "id": "school_1777984075329",
@@ -117,7 +125,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.329Z",
-    "updatedAt": "2026-05-05T12:27:55.329Z"
+    "updatedAt": "2026-05-05T12:27:55.329Z",
+    "lng": "118.576855",
+    "lat": "24.790240"
   },
   {
     "id": "school_1777984075332",
@@ -141,7 +151,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.332Z",
-    "updatedAt": "2026-05-05T12:27:55.332Z"
+    "updatedAt": "2026-05-05T12:27:55.332Z",
+    "lng": "118.605313",
+    "lat": "24.768266"
   },
   {
     "id": "school_1777984075334",
@@ -165,7 +177,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.334Z",
-    "updatedAt": "2026-05-05T12:27:55.334Z"
+    "updatedAt": "2026-05-05T12:27:55.334Z",
+    "lng": "118.601596",
+    "lat": "24.822034"
   },
   {
     "id": "school_1777984075337",
@@ -189,7 +203,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.337Z",
-    "updatedAt": "2026-05-05T12:27:55.337Z"
+    "updatedAt": "2026-05-05T12:27:55.337Z",
+    "lng": "118.579580",
+    "lat": "24.861544"
   },
   {
     "id": "school_1777984075339",
@@ -201,7 +217,7 @@
     "studentCount": "380",
     "staffCount": "28",
     "type": "小学",
-    "address": "晋江市东石镇海滨路9号",
+    "address": "福建省晋江市新塘街道晋新社区新韵路8号",
     "营养改善计划": "否",
     "department": "晋江市教育局",
     "leader": "郑琳",
@@ -213,7 +229,9 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.339Z",
-    "updatedAt": "2026-05-05T12:27:55.339Z"
+    "updatedAt": "2026-06-04T15:28:58.016Z",
+    "lng": "118.624211",
+    "lat": "24.767938"
   },
   {
     "id": "school_1777984075342",
@@ -237,156 +255,8 @@
     "canteenCount": 0,
     "academicYear": "2025-2026",
     "createdAt": "2026-05-05T12:27:55.342Z",
-    "updatedAt": "2026-05-05T12:27:55.342Z"
-  },
-  {
-    "id": "user_1777984920930",
-    "name": "晋江市第一中学",
-    "code": "school101",
-    "供餐类型": [],
-    "region": "青阳街道",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:00.931Z",
-    "updatedAt": "2026-05-05T12:42:00.931Z"
-  },
-  {
-    "id": "user_1777984920995",
-    "name": "晋江市第二中学",
-    "code": "school102",
-    "供餐类型": [],
-    "region": "梅岭街道",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:00.996Z",
-    "updatedAt": "2026-05-05T12:42:00.996Z"
-  },
-  {
-    "id": "user_1777984921059",
-    "name": "晋江市第三小学",
-    "code": "school103",
-    "供餐类型": [],
-    "region": "西园街道",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.060Z",
-    "updatedAt": "2026-05-05T12:42:01.060Z"
-  },
-  {
-    "id": "user_1777984921122",
-    "name": "晋江市第四小学",
-    "code": "school104",
-    "供餐类型": [],
-    "region": "罗山街道",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.123Z",
-    "updatedAt": "2026-05-05T12:42:01.123Z"
-  },
-  {
-    "id": "user_1777984921185",
-    "name": "晋江市第五中学",
-    "code": "school105",
-    "供餐类型": [],
-    "region": "灵源街道",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.186Z",
-    "updatedAt": "2026-05-05T12:42:01.186Z"
-  },
-  {
-    "id": "user_1777984921249",
-    "name": "晋江市第六中学",
-    "code": "school106",
-    "供餐类型": [],
-    "region": "新塘街道",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.250Z",
-    "updatedAt": "2026-05-05T12:42:01.250Z"
-  },
-  {
-    "id": "user_1777984921312",
-    "name": "晋江市第七小学",
-    "code": "school107",
-    "供餐类型": [],
-    "region": "陈埭镇",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.313Z",
-    "updatedAt": "2026-05-05T12:42:01.313Z"
-  },
-  {
-    "id": "user_1777984921376",
-    "name": "晋江市第八中学",
-    "code": "school108",
-    "供餐类型": [],
-    "region": "池店镇",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.377Z",
-    "updatedAt": "2026-05-05T12:42:01.377Z"
-  },
-  {
-    "id": "user_1777984921439",
-    "name": "晋江市第九小学",
-    "code": "school109",
-    "供餐类型": [],
-    "region": "东石镇",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.440Z",
-    "updatedAt": "2026-05-05T12:42:01.440Z"
-  },
-  {
-    "id": "user_1777984921502",
-    "name": "晋江市第十小学",
-    "code": "school110",
-    "供餐类型": [],
-    "region": "永和镇",
-    "contact": "",
-    "phone": "",
-    "studentCount": 0,
-    "staffCount": 0,
-    "canteenCount": 0,
-    "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:42:01.503Z",
-    "updatedAt": "2026-05-05T12:42:01.503Z"
+    "updatedAt": "2026-05-05T12:27:55.342Z",
+    "lng": "118.567170",
+    "lat": "24.693659"
   }
 ]

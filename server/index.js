@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 const app = express();
 const PORT = 3000;
@@ -10,6 +11,14 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Compatibility for stale frontend pages that call /selection/* without /api.
+app.use((req, res, next) => {
+    if (req.url.startsWith('/selection/')) {
+        req.url = `/api${req.url}`;
+    }
+    next();
+});
 
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, '../public')));
@@ -31,9 +40,33 @@ function writeJSON(filename, data) {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
+function httpsGet(url) {
+    return new Promise((resolve, reject) => {
+        https.get(url, res => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+        }).on('error', reject);
+    });
+}
+
 // ============ Auth Middleware ============
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const {
+    previousSelectionStatus,
+    assertWorkflowMutable,
+    validateAnnouncementPublish,
+    validateRegistrationReview,
+    validateCandidateSelection,
+    validateShortlistSelection,
+    validateVotingMetadata,
+    determineVotingWinner
+} = require('./selectionRules');
+const { buildSelectionWorkflowDetail } = require('./selectionWorkflow');
 const SECRET_KEY = 'school-meal-secret-key-2026';
 
 function generateToken(user) {
@@ -769,6 +802,75 @@ app.get('/api/schools/export-legacy', authMiddleware, roleMiddleware('admin'), (
     res.send(buffer);
 });
 
+// ============ 地图坐标接口 ============
+const AMAP_KEY = '3d9c04680e4e1a9e62dcda1f1c6a49ec';
+
+// 通用geocoding函数
+function geocodeAddress(address) {
+    return new Promise((resolve, reject) => {
+        const url = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(address)}&key=${AMAP_KEY}`;
+        httpsGet(url).then(data => {
+            if (data.status === '1' && data.geocodes && data.geocodes.length > 0) {
+                const loc = data.geocodes[0].location.split(',');
+                resolve({ lng: parseFloat(loc[0]), lat: parseFloat(loc[1]) });
+            } else {
+                resolve(null);
+            }
+        }).catch(reject);
+    });
+}
+
+// 获取有坐标的学校
+app.get('/api/schools/with-coords', authMiddleware, (req, res) => {
+    const schools = readJSON('schools.json');
+    const result = schools.filter(s => s.lng && s.lat);
+    res.json(result);
+});
+
+// 获取有坐标的校外供餐企业
+app.get('/api/catering-companies/with-coords', authMiddleware, (req, res) => {
+    const companies = readJSON('cateringCompanies.json');
+    const result = companies.filter(c => c.lng && c.lat);
+    res.json(result);
+});
+
+// 获取有坐标的食材供应商
+app.get('/api/ingredient-suppliers/with-coords', authMiddleware, (req, res) => {
+    const suppliers = readJSON('ingredientSuppliers.json');
+    const result = suppliers.filter(s => s.lng && s.lat);
+    res.json(result);
+});
+
+// 通用坐标更新接口
+app.put('/api/geocode/:type/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
+    const { type, id } = req.params;
+    const fileMap = {
+        'school': 'schools.json',
+        'ingredientSupplier': 'ingredientSuppliers.json',
+        'cateringCompany': 'cateringCompanies.json',
+        'operationSupplier': 'operationSuppliers.json',
+        'serviceSupplier': 'serviceSuppliers.json'
+    };
+    const file = fileMap[type];
+    if (!file) return res.status(400).json({ error: '无效的类型' });
+
+    const data = readJSON(file);
+    const idx = data.findIndex(item => item.id === id);
+    if (idx === -1) return res.status(404).json({ error: '记录不存在' });
+
+    const address = data[idx].address || data[idx].foodLicenseAddress;
+    if (!address) return res.status(400).json({ error: '地址为空，无法获取坐标' });
+
+    const coords = await geocodeAddress(address);
+    if (!coords) return res.status(400).json({ error: '无法获取坐标，请检查地址是否正确' });
+
+    data[idx].lng = coords.lng.toString();
+    data[idx].lat = coords.lat.toString();
+    writeJSON(file, data);
+
+    res.json({ success: true, ...coords });
+});
+
 app.get('/api/schools/:id', authMiddleware, (req, res) => {
     const schools = readJSON('schools.json');
     const school = schools.find(s => s.id === req.params.id);
@@ -979,7 +1081,7 @@ app.post('/api/schools/batch-import-file', upload.single('file'), authMiddleware
     res.json(results);
 });
 
-app.put('/api/schools/:id', authMiddleware, (req, res) => {
+app.put('/api/schools/:id', authMiddleware, async (req, res) => {
     const schools = readJSON('schools.json');
     const idx = schools.findIndex(s => s.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: '学校不存在' });
@@ -987,7 +1089,17 @@ app.put('/api/schools/:id', authMiddleware, (req, res) => {
     if (req.user.role === 'school' && req.user.schoolId !== req.params.id) {
         return res.status(403).json({ error: '无权修改此学校' });
     }
-    schools[idx] = { ...schools[idx], ...req.body, updatedAt: new Date().toISOString() };
+    const oldSchool = schools[idx];
+    const newData = req.body;
+    // 如果地址发生变化，自动更新坐标
+    if (newData.address && newData.address !== oldSchool.address) {
+        const coords = await geocodeAddress(newData.address);
+        if (coords) {
+            newData.lng = coords.lng.toString();
+            newData.lat = coords.lat.toString();
+        }
+    }
+    schools[idx] = { ...oldSchool, ...newData, updatedAt: new Date().toISOString() };
     writeJSON('schools.json', schools);
     res.json(schools[idx]);
 });
@@ -1403,6 +1515,197 @@ function exportSuppliers(req, res, filenamePrefix, sheetName, items) {
     ], rows);
 }
 
+function isCountableSignedContract(contract) {
+    const status = String(contract.status || '');
+    if (!status) return true;
+    return !status.includes('草稿') && !status.includes('终止') && !status.includes('解除');
+}
+
+function getSchoolStudentCount(school) {
+    return Number(school?.studentCount || school?.学生人数 || 0) || 0;
+}
+
+function withComputedCateringCurrentSupply(companies) {
+    const schools = readJSON('schools.json');
+    const contracts = readJSON('contracts.json');
+    const selectionContracts = readJSON('selectionContracts.json');
+    const companyIds = new Set(companies.map(c => c.id));
+    const companyNames = new Map(companies.map(c => [c.name, c.id]));
+    const schoolsById = new Map(schools.map(s => [s.id, s]));
+    const schoolsByName = new Map(schools.map(s => [s.name, s]));
+    const totals = new Map(companies.map(c => [c.id, 0]));
+    const countedSchoolKeys = new Set();
+    const linkedSelectionContractIds = new Set(contracts.map(c => c.selectionContractId).filter(Boolean));
+
+    const addContract = ({ enterpriseId, enterpriseName, schoolId, schoolName, status, selectionContractId }) => {
+        if (!isCountableSignedContract({ status })) return;
+        const companyId = companyIds.has(enterpriseId) ? enterpriseId : companyNames.get(enterpriseName);
+        if (!companyId) return;
+        const school = schoolsById.get(schoolId) || schoolsByName.get(schoolName);
+        if (!school) return;
+        const schoolKey = school.id || schoolId || schoolName || selectionContractId;
+        const countKey = `${companyId}|${schoolKey}`;
+        if (countedSchoolKeys.has(countKey)) return;
+        countedSchoolKeys.add(countKey);
+        totals.set(companyId, (totals.get(companyId) || 0) + getSchoolStudentCount(school));
+    };
+
+    contracts.forEach(contract => addContract({
+        enterpriseId: contract.ownerId,
+        enterpriseName: contract.ownerName,
+        schoolId: contract.relatedSchoolId || contract.schoolId,
+        schoolName: contract.relatedSchoolName,
+        status: contract.status,
+        selectionContractId: contract.selectionContractId
+    }));
+
+    selectionContracts
+        .filter(contract => !linkedSelectionContractIds.has(contract.id))
+        .forEach(contract => addContract({
+            enterpriseId: contract.enterpriseId,
+            enterpriseName: contract.enterpriseName,
+            schoolId: contract.schoolId,
+            schoolName: contract.schoolName,
+            status: contract.status,
+            selectionContractId: contract.id
+        }));
+
+    return companies.map(company => ({
+        ...company,
+        currentSupply: totals.get(company.id) || 0
+    }));
+}
+
+const supplierFieldAliases = {
+    name: ['name', '企业名称', '供应商名称'],
+    code: ['code', '统一社会信用代码', '信用代码'],
+    companyType: ['companyType', '企业类型'],
+    region: ['region', '所在区域', '区域'],
+    address: ['address', '详细地址', '地址'],
+    legalPerson: ['legalPerson', '法定代表人', '法人'],
+    phone: ['phone', '联系电话', '电话'],
+    capital: ['capital', '注册资本', '注册资本（万元）'],
+    establishDate: ['establishDate', '成立日期'],
+    businessScope: ['businessScope', '经营范围'],
+    academicYear: ['academicYear', '学年'],
+    mainProducts: ['mainProducts', '主营产品类别', '主营产品'],
+    dailyCapacity: ['dailyCapacity', '日均供餐能力', '日均供餐能力（份）'],
+    currentSupply: ['currentSupply', '现日供餐数量'],
+    emergencyBackup: ['emergencyBackup', '应急备选企业'],
+    operatedCanteens: ['operatedCanteens', '食堂委托经营项目数'],
+    serviceScope: ['serviceScope', '服务范围']
+};
+
+function pickImportValue(item, key, fallback = '') {
+    const aliases = supplierFieldAliases[key] || [key];
+    for (const alias of aliases) {
+        if (item[alias] !== undefined && item[alias] !== null && item[alias] !== '') {
+            return item[alias];
+        }
+    }
+    return fallback;
+}
+
+function normalizeSupplierImportItem(item, type, config, now) {
+    const supplier = {
+        name: String(pickImportValue(item, 'name')).trim(),
+        code: String(pickImportValue(item, 'code')).trim(),
+        companyType: String(pickImportValue(item, 'companyType', '有限责任公司')).trim(),
+        region: String(pickImportValue(item, 'region')).trim(),
+        address: String(pickImportValue(item, 'address')).trim(),
+        legalPerson: String(pickImportValue(item, 'legalPerson')).trim(),
+        phone: String(pickImportValue(item, 'phone')).trim(),
+        capital: String(pickImportValue(item, 'capital')).trim(),
+        establishDate: String(pickImportValue(item, 'establishDate')).trim(),
+        businessScope: String(pickImportValue(item, 'businessScope')).trim(),
+        academicYear: String(pickImportValue(item, 'academicYear', config.currentAcademicYear || '')).trim(),
+        createdAt: now,
+        updatedAt: now
+    };
+
+    if (type === 'ingredient') {
+        supplier.mainProducts = String(pickImportValue(item, 'mainProducts')).trim();
+    } else if (type === 'catering') {
+        supplier.dailyCapacity = String(pickImportValue(item, 'dailyCapacity')).trim();
+        supplier.currentSupply = 0;
+        supplier.emergencyBackup = String(pickImportValue(item, 'emergencyBackup')).trim();
+    } else if (type === 'operation') {
+        supplier.operatedCanteens = String(pickImportValue(item, 'operatedCanteens')).trim();
+    } else if (type === 'service') {
+        supplier.serviceScope = String(pickImportValue(item, 'serviceScope')).trim();
+    }
+
+    return supplier;
+}
+
+function processSupplierBatchImport(items, type, dataFile, idPrefix) {
+    const existing = readJSON(dataFile);
+    const config = readJSON('systemConfig.json');
+    const results = { success: 0, failed: 0, errors: [], imported: [] };
+    const existingCodes = new Set(existing.map(s => String(s.code || '').trim()).filter(Boolean));
+    const batchCodes = new Set();
+    const now = new Date().toISOString();
+
+    items.forEach((item, index) => {
+        const supplier = normalizeSupplierImportItem(item, type, config, now);
+        const rowNo = index + 1;
+        if (!supplier.name) {
+            results.failed++;
+            results.errors.push(`row ${rowNo}: supplier name is required`);
+            return;
+        }
+        if (!supplier.code) {
+            results.failed++;
+            results.errors.push(`row ${rowNo}: unified social credit code is required`);
+            return;
+        }
+        if (existingCodes.has(supplier.code) || batchCodes.has(supplier.code)) {
+            results.failed++;
+            results.errors.push(`row ${rowNo}: supplier code "${supplier.code}" already exists`);
+            return;
+        }
+        batchCodes.add(supplier.code);
+        supplier.id = `${idPrefix}${Date.now()}_${index}`;
+        existing.push(supplier);
+        results.imported.push(supplier);
+        results.success++;
+    });
+
+    if (results.success > 0) {
+        writeJSON(dataFile, existing);
+    }
+    return results;
+}
+
+function handleSupplierBatchImport(req, res, type, dataFile, idPrefix) {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
+    const items = req.body?.suppliers;
+    if (!Array.isArray(items)) {
+        return res.status(400).json({ error: 'suppliers must be an array' });
+    }
+    res.json(processSupplierBatchImport(items, type, dataFile, idPrefix));
+}
+
+function handleSupplierBatchImportFile(req, res, type, dataFile, idPrefix) {
+    if (!requireAdminForEnterpriseCreateDelete(req, res)) return;
+    if (!req.file) {
+        return res.status(400).json({ error: 'Excel file is required' });
+    }
+    const XLSX = require('xlsx');
+    let workbook;
+    try {
+        workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    } catch (e) {
+        return res.status(400).json({ error: 'Unable to parse Excel file' });
+    }
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const items = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    if (!items.length) {
+        return res.status(400).json({ error: 'Excel file has no data rows' });
+    }
+    res.json(processSupplierBatchImport(items, type, dataFile, idPrefix));
+}
+
 // --- Ingredient Suppliers ---
 app.get('/api/ingredient-suppliers', authMiddleware, (req, res) => {
     let suppliers = readJSON('ingredientSuppliers.json');
@@ -1419,6 +1722,14 @@ app.get('/api/ingredient-suppliers/export', authMiddleware, (req, res) => {
     if (req.query.academicYear) suppliers = suppliers.filter(s => s.academicYear && s.academicYear === req.query.academicYear);
     suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
     exportSuppliers(req, res, '食材供应商导出', '食材供应商', suppliers);
+});
+
+app.post('/api/ingredient-suppliers/batch-import', authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImport(req, res, 'ingredient', 'ingredientSuppliers.json', 'ing_');
+});
+
+app.post('/api/ingredient-suppliers/batch-import-file', upload.single('file'), authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImportFile(req, res, 'ingredient', 'ingredientSuppliers.json', 'ing_');
 });
 
 app.get('/api/ingredient-suppliers/:id', authMiddleware, (req, res) => {
@@ -1476,6 +1787,7 @@ app.get('/api/catering-companies', authMiddleware, (req, res) => {
         companies = companies.filter(c => c.academicYear && c.academicYear === academicYear);
     }
     companies = filterEnterpriseRecordsForUser(companies, req.user);
+    companies = withComputedCateringCurrentSupply(companies);
     sendListResponse(req, res, companies, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
 });
 
@@ -1483,12 +1795,22 @@ app.get('/api/catering-companies/export', authMiddleware, (req, res) => {
     let companies = readJSON('cateringCompanies.json');
     if (req.query.academicYear) companies = companies.filter(c => c.academicYear && c.academicYear === req.query.academicYear);
     companies = filterEnterpriseRecordsForUser(companies, req.user);
+    companies = withComputedCateringCurrentSupply(companies);
     exportSuppliers(req, res, '校外供餐企业导出', '校外供餐企业', companies);
+});
+
+app.post('/api/catering-companies/batch-import', authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImport(req, res, 'catering', 'cateringCompanies.json', 'catering_');
+});
+
+app.post('/api/catering-companies/batch-import-file', upload.single('file'), authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImportFile(req, res, 'catering', 'cateringCompanies.json', 'catering_');
 });
 
 app.get('/api/catering-companies/:id', authMiddleware, (req, res) => {
     const companies = readJSON('cateringCompanies.json');
-    const company = companies.find(c => c.id === req.params.id);
+    const computedCompanies = withComputedCateringCurrentSupply(companies);
+    const company = computedCompanies.find(c => c.id === req.params.id);
     const access = ensureEnterpriseRecordAccess(req.user, companies, req.params.id);
     if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (!company) return res.status(404).json({ error: '企业不存在' });
@@ -1551,6 +1873,14 @@ app.get('/api/operation-suppliers/export', authMiddleware, (req, res) => {
     exportSuppliers(req, res, '委托经营供应商导出', '委托经营供应商', suppliers);
 });
 
+app.post('/api/operation-suppliers/batch-import', authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImport(req, res, 'operation', 'operationSuppliers.json', 'op_');
+});
+
+app.post('/api/operation-suppliers/batch-import-file', upload.single('file'), authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImportFile(req, res, 'operation', 'operationSuppliers.json', 'op_');
+});
+
 app.get('/api/operation-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('operationSuppliers.json');
     const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
@@ -1611,6 +1941,14 @@ app.get('/api/service-suppliers/export', authMiddleware, (req, res) => {
     if (req.query.academicYear) suppliers = suppliers.filter(s => s.academicYear && s.academicYear === req.query.academicYear);
     suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
     exportSuppliers(req, res, '委托服务提供商导出', '委托服务提供商', suppliers);
+});
+
+app.post('/api/service-suppliers/batch-import', authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImport(req, res, 'service', 'serviceSuppliers.json', 'svc_');
+});
+
+app.post('/api/service-suppliers/batch-import-file', upload.single('file'), authMiddleware, roleMiddleware('admin'), (req, res) => {
+    handleSupplierBatchImportFile(req, res, 'service', 'serviceSuppliers.json', 'svc_');
 });
 
 app.get('/api/service-suppliers/:id', authMiddleware, (req, res) => {
@@ -1955,7 +2293,8 @@ app.get('/api/contracts', authMiddleware, (req, res) => {
     const user = req.user;
 
     if (user.role === 'school') {
-        contracts = contracts.filter(c => c.relatedSchoolId === user.id);
+        const schoolKey = user.schoolId || user.id;
+        contracts = contracts.filter(c => c.relatedSchoolId === schoolKey || c.schoolId === schoolKey);
     } else if (['ingredientSupplier', 'cateringCompany', 'operationSupplier'].includes(user.role)) {
         // 企业用户按名称匹配（因为ownerId是企业ID，与user.id不匹配）
         contracts = contracts.filter(c => c.ownerName === user.name);
@@ -1970,7 +2309,7 @@ app.post('/api/contracts', authMiddleware, (req, res) => {
         relatedSchoolId, relatedSchoolName, relatedCanteenId, relatedCanteenName,
         ownerId, ownerName, ownerType,
         contractNo, contractName, contractType,
-        signDate, startDate, endDate, amount, paymentTerms, status, remarks
+        signDate, startDate, endDate, amount, paymentTerms, status, mealStandard, dinerCount, remarks
     } = req.body;
 
     const newContract = {
@@ -1990,6 +2329,8 @@ app.post('/api/contracts', authMiddleware, (req, res) => {
         endDate: endDate || '',
         amount: amount || 0,
         paymentTerms: paymentTerms || '',
+        mealStandard: mealStandard || '',
+        dinerCount: dinerCount || '',
         status: status || '草稿',
         remarks: remarks || '',
         createdAt: new Date().toISOString(),
@@ -2008,7 +2349,7 @@ app.put('/api/contracts/:id', authMiddleware, (req, res) => {
 
     const {
         contractNo, contractName, contractType,
-        signDate, startDate, endDate, amount, paymentTerms, status, remarks
+        signDate, startDate, endDate, amount, paymentTerms, status, mealStandard, dinerCount, remarks
     } = req.body;
 
     contracts[idx] = {
@@ -2021,6 +2362,8 @@ app.put('/api/contracts/:id', authMiddleware, (req, res) => {
         endDate: endDate !== undefined ? endDate : contracts[idx].endDate,
         amount: amount !== undefined ? amount : contracts[idx].amount,
         paymentTerms: paymentTerms !== undefined ? paymentTerms : contracts[idx].paymentTerms,
+        mealStandard: mealStandard !== undefined ? mealStandard : contracts[idx].mealStandard,
+        dinerCount: dinerCount !== undefined ? dinerCount : contracts[idx].dinerCount,
         status: status !== undefined ? status : contracts[idx].status,
         remarks: remarks !== undefined ? remarks : contracts[idx].remarks,
         updatedAt: new Date().toISOString()
@@ -2058,6 +2401,16 @@ function canUseSelectionModule(school, canteenId) {
     return false;
 }
 
+function ensureSelectionWorkflowMutable(announcement, res) {
+    try {
+        assertWorkflowMutable(announcement.status);
+        return true;
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+        return false;
+    }
+}
+
 // --- 遴选公告 API ---
 // 获取遴选公告列表
 app.get('/api/selection/announcements', authMiddleware, (req, res) => {
@@ -2070,20 +2423,9 @@ app.get('/api/selection/announcements', authMiddleware, (req, res) => {
     if (user.role === 'school') {
         filtered = filtered.filter(a => a.schoolId === user.schoolId || a.schoolId === user.id);
     }
-    // 企业用户看已发布的公告
+    // 暂不开放企业线上报名，企业端不展示可报名公告
     else if (['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(user.role)) {
-        filtered = filtered.filter(a => a.status === '已发布' || a.status === '遴选中');
-        // 根据企业类型过滤公告
-        const serviceTypeMap = {
-            'ingredientSupplier': '食材供应',
-            'cateringCompany': '校外供餐',
-            'operationSupplier': '委托经营',
-            'serviceSupplier': '服务提供'
-        };
-        const myServiceType = serviceTypeMap[user.role];
-        if (myServiceType) {
-            filtered = filtered.filter(a => a.serviceType === myServiceType);
-        }
+        filtered = [];
     }
     // admin 可以看所有
 
@@ -2101,7 +2443,25 @@ app.get('/api/selection/announcements/:id', authMiddleware, (req, res) => {
     res.json(announcement);
 });
 
-// 创建遴选公告
+app.get('/api/selection/announcements/:id/workflow', authMiddleware, (req, res) => {
+    try {
+        const detail = buildSelectionWorkflowDetail({
+            announcements: readJSON('selectionAnnouncements.json'),
+            registrations: readJSON('selectionRegistrations.json'),
+            candidates: readJSON('selectionCandidates.json'),
+            inspections: readJSON('selectionInspections.json'),
+            shortlisted: readJSON('selectionShortlisted.json'),
+            results: readJSON('selectionResults.json'),
+            contracts: readJSON('selectionContracts.json')
+        }, req.params.id, req.user);
+
+        res.json(detail);
+    } catch (err) {
+        res.status(err.statusCode || 500).json({ error: err.message });
+    }
+});
+
+// 发起遴选项目
 app.post('/api/selection/announcements', authMiddleware, (req, res) => {
     if (!['school', 'admin'].includes(req.user.role)) {
         return res.status(403).json({ error: '无权限' });
@@ -2128,10 +2488,10 @@ app.post('/api/selection/announcements', authMiddleware, (req, res) => {
         if (canteen) canteenName = canteen.name;
     }
 
-    // 获取所有公告用于生成编号
+    // 获取所有项目用于生成编号
     const announcements = readJSON('selectionAnnouncements.json');
 
-    // 生成公告编号
+    // 生成项目编号
     const year = new Date().getFullYear();
     const count = announcements.filter(a => a.announcementNo.includes(year)).length + 1;
     const announcementNo = `XL-${year}-${String(count).padStart(3, '0')}`;
@@ -2139,18 +2499,19 @@ app.post('/api/selection/announcements', authMiddleware, (req, res) => {
     const newAnnouncement = {
         id: `sel_ann_${Date.now()}`,
         announcementNo,
+        projectNo: announcementNo,
         schoolId: user.schoolId || user.id,
         schoolName: school.name,
         canteenId: canteenId || null,
         canteenName,
         serviceType,
         title,
-        content,
-        requirements,
-        publishUrl,
-        registrationDeadline,
+        content: content || '',
+        requirements: requirements || '',
+        publishUrl: publishUrl || '',
+        registrationDeadline: registrationDeadline || '',
         publishTime: null,
-        status: '草稿',
+        status: '项目已立项',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -2160,7 +2521,7 @@ app.post('/api/selection/announcements', authMiddleware, (req, res) => {
     res.json(newAnnouncement);
 });
 
-// 更新遴选公告
+// 更新遴选公告信息
 app.put('/api/selection/announcements/:id', authMiddleware, (req, res) => {
     if (!['school', 'admin'].includes(req.user.role)) {
         return res.status(403).json({ error: '无权限' });
@@ -2172,9 +2533,9 @@ app.put('/api/selection/announcements/:id', authMiddleware, (req, res) => {
 
     const announcement = announcements[idx];
 
-    // 只有草稿状态可以编辑
-    if (announcement.status !== '草稿') {
-        return res.status(400).json({ error: '只有草稿状态的公告可以编辑' });
+    // 只有项目已立项状态可以编辑公告信息，保留草稿兼容旧数据
+    if (!['项目已立项', '草稿'].includes(announcement.status)) {
+        return res.status(400).json({ error: '只有项目已立项状态可以编辑公告信息' });
     }
 
     // 学校用户只能编辑自己的公告
@@ -2208,15 +2569,70 @@ app.post('/api/selection/announcements/:id/publish', authMiddleware, (req, res) 
     if (idx === -1) return res.status(404).json({ error: '公告不存在' });
 
     const announcement = announcements[idx];
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
-    if (announcement.status !== '草稿') {
-        return res.status(400).json({ error: '只有草稿状态的公告可以发布' });
+    if (!['项目已立项', '草稿'].includes(announcement.status)) {
+        return res.status(400).json({ error: '只有项目已立项状态可以发布公告' });
+    }
+
+    try {
+        validateAnnouncementPublish(announcement);
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
     }
 
     announcements[idx] = {
         ...announcement,
-        status: '已发布',
+        status: '报名审核中',
         publishTime: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+
+    writeJSON('selectionAnnouncements.json', announcements);
+    res.json(announcements[idx]);
+});
+
+// 退回遴选流程到前一步
+app.post('/api/selection/announcements/:id/rollback', authMiddleware, (req, res) => {
+    if (!['school', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: '无权限' });
+    }
+
+    const { reason } = req.body;
+    if (!String(reason || '').trim()) {
+        return res.status(400).json({ error: '退回原因必填' });
+    }
+
+    const announcements = readJSON('selectionAnnouncements.json');
+    const idx = announcements.findIndex(a => a.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: '公告不存在' });
+
+    const announcement = announcements[idx];
+    if (req.user.role === 'school' && announcement.schoolId !== (req.user.schoolId || req.user.id)) {
+        return res.status(403).json({ error: '无权限' });
+    }
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
+
+    const previousStatus = previousSelectionStatus(announcement.status);
+    if (!previousStatus) {
+        return res.status(400).json({ error: '当前状态不允许退回' });
+    }
+
+    const rollbackLog = announcement.rollbackLog || [];
+    announcements[idx] = {
+        ...announcement,
+        status: previousStatus,
+        rollbackLog: [
+            ...rollbackLog,
+            {
+                fromStatus: announcement.status,
+                toStatus: previousStatus,
+                reason: reason.trim(),
+                operatorId: req.user.id,
+                operatorName: req.user.name,
+                operatedAt: new Date().toISOString()
+            }
+        ],
         updatedAt: new Date().toISOString()
     };
 
@@ -2254,8 +2670,8 @@ app.delete('/api/selection/announcements/:id', authMiddleware, (req, res) => {
     const announcement = announcements.find(a => a.id === req.params.id);
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
 
-    if (announcement.status !== '草稿') {
-        return res.status(400).json({ error: '只有草稿状态的公告可以删除' });
+    if (!['项目已立项', '草稿'].includes(announcement.status)) {
+        return res.status(400).json({ error: '只有项目已立项状态的项目可以删除' });
     }
 
     const filtered = announcements.filter(a => a.id !== req.params.id);
@@ -2264,30 +2680,32 @@ app.delete('/api/selection/announcements/:id', authMiddleware, (req, res) => {
 });
 
 // --- 遴选报名 API ---
-// 企业提交报名（也支持学校代替企业创建报名记录）
+// 学校录入线下报名企业
 app.post('/api/selection/registrations', authMiddleware, (req, res) => {
     const { announcementId, enterpriseId, enterpriseName, contactPerson, contactPhone, contactEmail, attachments } = req.body;
     const user = req.user;
 
-    // 学校可以代替企业创建报名记录（简化流程）
     const isSchool = user.role === 'school';
-    const isEnterprise = ['ingredientSupplier', 'cateringCompany', 'operationSupplier', 'serviceSupplier'].includes(user.role);
 
-    if (!isSchool && !isEnterprise) {
+    if (!isSchool) {
         return res.status(403).json({ error: '无权限创建报名记录' });
     }
 
     const announcements = readJSON('selectionAnnouncements.json');
     const announcement = announcements.find(a => a.id === announcementId);
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
-    if (announcement.status !== '已发布' && announcement.status !== '遴选中') {
-        return res.status(400).json({ error: '公告已结束或未发布' });
+    if (!['已发布', '报名审核中'].includes(announcement.status)) {
+        return res.status(400).json({ error: '当前状态不能录入报名企业' });
     }
 
     // 检查是否已报名
     const registrations = readJSON('selectionRegistrations.json');
-    const checkEnterpriseId = isSchool ? enterpriseId : user.id;
+    const checkEnterpriseId = enterpriseId;
+    if (!checkEnterpriseId) {
+        return res.status(400).json({ error: '请选择报名企业' });
+    }
     const existingReg = registrations.find(r => r.announcementId === announcementId && r.enterpriseId === checkEnterpriseId);
     if (existingReg) {
         return res.status(400).json({ error: '该企业已报名此公告' });
@@ -2332,7 +2750,7 @@ app.post('/api/selection/registrations', authMiddleware, (req, res) => {
         contactPhone: contactPhone || '',
         contactEmail: contactEmail || '',
         attachments: attachments || [],
-        status: '已受理',
+        status: '待审核',
         reviewTime: null,
         reviewComments: null,
         createdAt: new Date().toISOString(),
@@ -2341,6 +2759,14 @@ app.post('/api/selection/registrations', authMiddleware, (req, res) => {
 
     registrations.push(newRegistration);
     writeJSON('selectionRegistrations.json', registrations);
+
+    const annIdx = announcements.findIndex(a => a.id === announcementId);
+    if (annIdx !== -1 && announcements[annIdx].status === '已发布') {
+        announcements[annIdx].status = '报名审核中';
+        announcements[annIdx].updatedAt = new Date().toISOString();
+        writeJSON('selectionAnnouncements.json', announcements);
+    }
+
     res.json(newRegistration);
 });
 
@@ -2375,13 +2801,19 @@ app.put('/api/selection/registrations/:id/review', authMiddleware, (req, res) =>
     }
 
     const { status, reviewComments } = req.body;
-    if (!['已受理', '已拒绝'].includes(status)) {
-        return res.status(400).json({ error: '无效的审核状态' });
+    try {
+        validateRegistrationReview({ status, reviewComments });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
     }
 
     const registrations = readJSON('selectionRegistrations.json');
     const idx = registrations.findIndex(r => r.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: '报名不存在' });
+    const announcements = readJSON('selectionAnnouncements.json');
+    const announcement = announcements.find(a => a.id === registrations[idx].announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     registrations[idx] = {
         ...registrations[idx],
@@ -2421,13 +2853,26 @@ app.post('/api/selection/candidates', authMiddleware, (req, res) => {
     const announcements = readJSON('selectionAnnouncements.json');
     const announcement = announcements.find(a => a.id === announcementId);
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     // 获取已受理的企业
     const registrations = readJSON('selectionRegistrations.json');
-    const acceptedRegs = registrations.filter(r => r.announcementId === announcementId && r.status === '已受理');
+    const acceptedRegs = registrations.filter(r =>
+        r.announcementId === announcementId && ['审核通过', '已受理'].includes(r.status)
+    );
+    const selectedEnterpriseIds = enterpriseIds || [];
+
+    try {
+        validateCandidateSelection({
+            acceptedCount: acceptedRegs.length,
+            selectedCount: selectedEnterpriseIds.length
+        });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
 
     const confirmedEnterprises = acceptedRegs
-        .filter(r => enterpriseIds.includes(r.enterpriseId))
+        .filter(r => selectedEnterpriseIds.includes(r.enterpriseId))
         .map(r => ({
             enterpriseId: r.enterpriseId,
             enterpriseName: r.enterpriseName,
@@ -2441,6 +2886,7 @@ app.post('/api/selection/candidates', authMiddleware, (req, res) => {
         schoolId: req.user.schoolId || req.user.id,
         schoolName: announcement.schoolName,
         confirmedEnterprises,
+        determinationMethod: '线下随机确定',
         confirmationTime: new Date().toISOString(),
         status: '已确认',
         createdAt: new Date().toISOString(),
@@ -2453,8 +2899,9 @@ app.post('/api/selection/candidates', authMiddleware, (req, res) => {
 
     // 更新公告状态为遴选中
     const annIdx = announcements.findIndex(a => a.id === announcementId);
-    if (annIdx !== -1 && announcements[annIdx].status === '已发布') {
-        announcements[annIdx].status = '遴选中';
+    if (annIdx !== -1) {
+        announcements[annIdx].status = '考察中';
+        announcements[annIdx].updatedAt = new Date().toISOString();
         writeJSON('selectionAnnouncements.json', announcements);
     }
 
@@ -2492,6 +2939,10 @@ app.post('/api/selection/inspections', authMiddleware, (req, res) => {
     const registrations = readJSON('selectionRegistrations.json');
     const registration = registrations.find(r => r.announcementId === announcementId && r.enterpriseId === enterpriseId);
     if (!registration) return res.status(404).json({ error: '报名记录不存在' });
+    const announcements = readJSON('selectionAnnouncements.json');
+    const announcement = announcements.find(a => a.id === announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     // 生成考察编号
     const year = new Date().getFullYear();
@@ -2552,6 +3003,10 @@ app.put('/api/selection/inspections/:id', authMiddleware, (req, res) => {
     const inspections = readJSON('selectionInspections.json');
     const idx = inspections.findIndex(i => i.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: '考察记录不存在' });
+    const announcements = readJSON('selectionAnnouncements.json');
+    const announcement = announcements.find(a => a.id === inspections[idx].announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     const { inspectionTime, inspectionLocation, inspectors, inspectionResult, attachments } = req.body;
     inspections[idx] = {
@@ -2577,6 +3032,10 @@ app.post('/api/selection/inspections/:id/pass', authMiddleware, (req, res) => {
     const inspections = readJSON('selectionInspections.json');
     const idx = inspections.findIndex(i => i.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: '考察记录不存在' });
+    const announcements = readJSON('selectionAnnouncements.json');
+    const announcement = announcements.find(a => a.id === inspections[idx].announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     inspections[idx] = {
         ...inspections[idx],
@@ -2599,6 +3058,10 @@ app.post('/api/selection/inspections/:id/fail', authMiddleware, (req, res) => {
     const inspections = readJSON('selectionInspections.json');
     const idx = inspections.findIndex(i => i.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: '考察记录不存在' });
+    const announcements = readJSON('selectionAnnouncements.json');
+    const announcement = announcements.find(a => a.id === inspections[idx].announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     inspections[idx] = {
         ...inspections[idx],
@@ -2624,13 +3087,24 @@ app.post('/api/selection/shortlisted', authMiddleware, (req, res) => {
     const announcements = readJSON('selectionAnnouncements.json');
     const announcement = announcements.find(a => a.id === announcementId);
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     // 获取考察通过的企业
     const inspections = readJSON('selectionInspections.json');
     const passedInspections = inspections.filter(i => i.announcementId === announcementId && i.passed === true);
+    const selectedEnterpriseIds = enterpriseIds || [];
+
+    try {
+        validateShortlistSelection({
+            passedCount: passedInspections.length,
+            selectedCount: selectedEnterpriseIds.length
+        });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
 
     const shortlistedEnterprises = passedInspections
-        .filter(i => enterpriseIds.includes(i.enterpriseId))
+        .filter(i => selectedEnterpriseIds.includes(i.enterpriseId))
         .map(i => ({
             enterpriseId: i.enterpriseId,
             enterpriseName: i.enterpriseName,
@@ -2653,6 +3127,13 @@ app.post('/api/selection/shortlisted', authMiddleware, (req, res) => {
     const shortlisted = readJSON('selectionShortlisted.json');
     shortlisted.push(newShortlisted);
     writeJSON('selectionShortlisted.json', shortlisted);
+
+    const annIdx = announcements.findIndex(a => a.id === announcementId);
+    if (annIdx !== -1) {
+        announcements[annIdx].status = '家长投票中';
+        announcements[annIdx].updatedAt = new Date().toISOString();
+        writeJSON('selectionAnnouncements.json', announcements);
+    }
 
     res.json(newShortlisted);
 });
@@ -2682,19 +3163,66 @@ app.post('/api/selection/results', authMiddleware, (req, res) => {
         return res.status(403).json({ error: '无权限' });
     }
 
-    const { announcementId, winningEnterprise, determinationMethod, determinationBy, parentRepresentatives, remarks } = req.body;
+    const {
+        announcementId,
+        winningEnterprise,
+        voteResults,
+        voteTime,
+        voteLocation,
+        parentAttendance,
+        validVotes,
+        roundNo,
+        determinationBy,
+        parentRepresentatives,
+        remarks
+    } = req.body;
 
     const announcements = readJSON('selectionAnnouncements.json');
     const announcement = announcements.find(a => a.id === announcementId);
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
+
+    try {
+        validateVotingMetadata({ voteResults, validVotes, voteTime, voteLocation, parentAttendance });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+
+    const results = readJSON('selectionResults.json');
+    const existingRounds = results.filter(r => r.announcementId === announcementId);
+    const currentRoundNo = Number(roundNo || existingRounds.length + 1);
+    let finalWinningEnterprise = winningEnterprise;
+    let resultStatus = '已确定';
+    let revoteEnterprises = [];
+    try {
+        finalWinningEnterprise = determineVotingWinner(voteResults || []);
+    } catch (err) {
+        resultStatus = '需二次投票';
+        revoteEnterprises = err.revoteEnterprises || [];
+        finalWinningEnterprise = null;
+    }
 
     const newResult = {
         id: `sel_res_${Date.now()}`,
         announcementId,
         schoolId: req.user.schoolId || req.user.id,
         schoolName: announcement.schoolName,
-        winningEnterprise,
-        determinationMethod,
+        roundNo: currentRoundNo,
+        status: resultStatus,
+        winningEnterprise: finalWinningEnterprise ? {
+            enterpriseId: finalWinningEnterprise.enterpriseId,
+            enterpriseName: finalWinningEnterprise.enterpriseName,
+            votes: finalWinningEnterprise.votes,
+            totalVotes: finalWinningEnterprise.totalVotes,
+            voteRatio: finalWinningEnterprise.voteRatio
+        } : null,
+        voteResults: voteResults || [],
+        voteTime: voteTime || new Date().toISOString().split('T')[0],
+        voteLocation: voteLocation || '',
+        parentAttendance: Number(parentAttendance || 0),
+        validVotes: Number(validVotes || 0),
+        revoteEnterprises,
+        determinationMethod: '投票',
         determinationTime: new Date().toISOString(),
         determinationBy,
         parentRepresentatives: parentRepresentatives || [],
@@ -2703,15 +3231,16 @@ app.post('/api/selection/results', authMiddleware, (req, res) => {
         updatedAt: new Date().toISOString()
     };
 
-    const results = readJSON('selectionResults.json');
     results.push(newResult);
     writeJSON('selectionResults.json', results);
 
-    // 更新公告状态为已结束
-    const annIdx = announcements.findIndex(a => a.id === announcementId);
-    if (annIdx !== -1) {
-        announcements[annIdx].status = '已结束';
-        writeJSON('selectionAnnouncements.json', announcements);
+    if (resultStatus === '已确定') {
+        // 更新公告状态为待签合同
+        const annIdx = announcements.findIndex(a => a.id === announcementId);
+        if (annIdx !== -1) {
+            announcements[annIdx].status = '待签合同';
+            writeJSON('selectionAnnouncements.json', announcements);
+        }
     }
 
     res.json(newResult);
@@ -2742,7 +3271,7 @@ app.post('/api/selection/contracts', authMiddleware, (req, res) => {
         return res.status(403).json({ error: '无权限' });
     }
 
-    const { announcementId, resultId, canteenId, canteenName, enterpriseId, enterpriseName, contractStartDate, contractEndDate, contractAmount, contractUnit, contractFileUrl, signDate, remarks } = req.body;
+    const { announcementId, resultId, canteenId, canteenName, enterpriseId, enterpriseName, contractStartDate, contractEndDate, contractAmount, contractUnit, contractFileUrl, signDate, paymentTerms, mealStandard, dinerCount, remarks } = req.body;
 
     // 生成合同编号
     const year = new Date().getFullYear();
@@ -2752,6 +3281,8 @@ app.post('/api/selection/contracts', authMiddleware, (req, res) => {
 
     const announcements = readJSON('selectionAnnouncements.json');
     const announcement = announcements.find(a => a.id === announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
     const newContract = {
         id: `sel_ctr_${Date.now()}`,
@@ -2769,6 +3300,9 @@ app.post('/api/selection/contracts', authMiddleware, (req, res) => {
         contractAmount,
         contractUnit: contractUnit || '万元/年',
         contractFileUrl: contractFileUrl || '',
+        paymentTerms: paymentTerms || '',
+        mealStandard: mealStandard || '',
+        dinerCount: dinerCount || '',
         status: '已签订',
         signDate: signDate || new Date().toISOString().split('T')[0],
         remarks: remarks || '',
@@ -2778,6 +3312,46 @@ app.post('/api/selection/contracts', authMiddleware, (req, res) => {
 
     contracts.push(newContract);
     writeJSON('selectionContracts.json', contracts);
+
+    const linkedContracts = readJSON('contracts.json');
+    linkedContracts.push({
+        id: `ctr_${Date.now()}`,
+        source: 'selection',
+        selectionContractId: newContract.id,
+        selectionAnnouncementId: announcementId,
+        selectionResultId: resultId,
+        schoolId: newContract.schoolId,
+        relatedSchoolId: newContract.schoolId,
+        relatedSchoolName: newContract.schoolName,
+        relatedCanteenId: canteenId || '',
+        relatedCanteenName: canteenName || announcement.canteenName || '',
+        ownerId: enterpriseId || '',
+        ownerName: enterpriseName || '',
+        ownerType: '校外供餐企业',
+        contractNo,
+        contractName: `${announcement.title || '公开遴选'}遴选合同`,
+        contractType: '公开遴选供餐合同',
+        signDate: newContract.signDate,
+        startDate: contractStartDate || '',
+        endDate: contractEndDate || '',
+        amount: contractAmount || 0,
+        paymentTerms: paymentTerms || '',
+        mealStandard: mealStandard || '',
+        dinerCount: dinerCount || '',
+        status: '有效',
+        remarks: remarks || '',
+        createdAt: newContract.createdAt,
+        updatedAt: newContract.updatedAt
+    });
+    writeJSON('contracts.json', linkedContracts);
+
+    const annIdx = announcements.findIndex(a => a.id === announcementId);
+    if (annIdx !== -1) {
+        announcements[annIdx].status = '已完成';
+        announcements[annIdx].updatedAt = new Date().toISOString();
+        writeJSON('selectionAnnouncements.json', announcements);
+    }
+
     res.json(newContract);
 });
 
@@ -2808,7 +3382,7 @@ app.put('/api/selection/contracts/:id', authMiddleware, (req, res) => {
     const idx = contracts.findIndex(c => c.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: '合同不存在' });
 
-    const { contractStartDate, contractEndDate, contractAmount, contractUnit, contractFileUrl, signDate, remarks, status } = req.body;
+    const { contractStartDate, contractEndDate, contractAmount, contractUnit, contractFileUrl, signDate, paymentTerms, mealStandard, dinerCount, remarks, status } = req.body;
     contracts[idx] = {
         ...contracts[idx],
         contractStartDate: contractStartDate || contracts[idx].contractStartDate,
@@ -2817,6 +3391,9 @@ app.put('/api/selection/contracts/:id', authMiddleware, (req, res) => {
         contractUnit: contractUnit || contracts[idx].contractUnit,
         contractFileUrl: contractFileUrl !== undefined ? contractFileUrl : contracts[idx].contractFileUrl,
         signDate: signDate || contracts[idx].signDate,
+        paymentTerms: paymentTerms !== undefined ? paymentTerms : contracts[idx].paymentTerms,
+        mealStandard: mealStandard !== undefined ? mealStandard : contracts[idx].mealStandard,
+        dinerCount: dinerCount !== undefined ? dinerCount : contracts[idx].dinerCount,
         remarks: remarks !== undefined ? remarks : contracts[idx].remarks,
         status: status || contracts[idx].status,
         updatedAt: new Date().toISOString()

@@ -13,7 +13,9 @@
     "businessScope": "餐饮管理、食堂承包经营、物业管理、食材配送",
     "operatedCanteens": "8",
     "academicYear": "2025-2026",
-    "createdAt": "2026-04-27T15:58:19.011Z"
+    "createdAt": "2026-04-27T15:58:19.011Z",
+    "lng": "118.657187",
+    "lat": "24.870393"
   },
   {
     "id": "op_1777984327119",
@@ -29,7 +31,9 @@
     "businessScope": "餐饮管理、食堂承包经营、物业管理",
     "operatedCanteens": "15",
     "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:32:07.119Z"
+    "createdAt": "2026-05-05T12:32:07.119Z",
+    "lng": "118.174121",
+    "lat": "24.469798"
   },
   {
     "id": "op_1777984327121",
@@ -45,7 +49,9 @@
     "businessScope": "餐饮管理、食堂委托经营、食材配送",
     "operatedCanteens": "8",
     "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:32:07.121Z"
+    "createdAt": "2026-05-05T12:32:07.121Z",
+    "lng": "118.598359",
+    "lat": "24.899503"
   },
   {
     "id": "op_1777984327122",
@@ -61,7 +67,9 @@
     "businessScope": "食堂承包经营、餐饮管理服务、物业管理",
     "operatedCanteens": "12",
     "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:32:07.122Z"
+    "createdAt": "2026-05-05T12:32:07.122Z",
+    "lng": "119.309556",
+    "lat": "26.091869"
   },
   {
     "id": "op_1777984327124",
@@ -93,6 +101,8 @@
     "businessScope": "食堂承包经营、餐饮管理、食品加工",
     "operatedCanteens": "5",
     "academicYear": "2025-2026",
-    "createdAt": "2026-05-05T12:32:07.126Z"
+    "createdAt": "2026-05-05T12:32:07.126Z",
+    "lng": "117.681314",
+    "lat": "24.49716"
   }
 ]

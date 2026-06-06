@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "id": "ctr_1780676336127",
+    "source": "selection",
+    "selectionContractId": "sel_ctr_1780676336125",
+    "selectionAnnouncementId": "sel_ann_1780414764788",
+    "selectionResultId": "sel_res_1780674846770",
+    "schoolId": "school_1777984075339",
+    "relatedSchoolId": "school_1777984075339",
+    "relatedSchoolName": "晋江市第九小学",
+    "relatedCanteenId": "",
+    "relatedCanteenName": "校外供餐",
+    "ownerId": "catering_2025_2027_006",
+    "ownerName": "泉州市悦泰餐饮服务有限公司",
+    "ownerType": "校外供餐企业",
+    "contractNo": "XL-CTR-2026-002",
+    "contractName": "2026-2027测试遴选合同",
+    "contractType": "公开遴选供餐合同",
+    "signDate": "2026-06-05",
+    "startDate": "2026-06-05",
+    "endDate": "2027-06-05",
+    "amount": "100",
+    "paymentTerms": "月结",
+    "mealStandard": "10",
+    "dinerCount": "500",
+    "status": "有效",
+    "remarks": "",
+    "createdAt": "2026-06-05T16:18:56.125Z",
+    "updatedAt": "2026-06-05T16:18:56.125Z"
+  }
+]

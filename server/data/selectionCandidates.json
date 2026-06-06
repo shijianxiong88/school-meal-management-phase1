@@ -1,1 +1,88 @@
-[]
+[
+  {
+    "id": "sel_cand_1780411208769",
+    "announcementId": "sel_ann_1780411063233",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "confirmedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-02T14:40:08.769Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_002",
+        "enterpriseName": "晋江市晋美餐饮管理有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-02T14:40:08.769Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_003",
+        "enterpriseName": "泉州市文粮餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-02T14:40:08.769Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_006",
+        "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-02T14:40:08.769Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_010",
+        "enterpriseName": "福建中禾食品科技有限责任公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-02T14:40:08.769Z"
+      }
+    ],
+    "determinationMethod": "线下随机确定",
+    "confirmationTime": "2026-06-02T14:40:08.769Z",
+    "status": "已确认",
+    "createdAt": "2026-06-02T14:40:08.769Z",
+    "updatedAt": "2026-06-02T14:40:08.769Z"
+  },
+  {
+    "id": "sel_cand_1780497396976",
+    "announcementId": "sel_ann_1780414764788",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "confirmedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-03T14:36:36.976Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_005",
+        "enterpriseName": "泉州美尔佳餐饮管理有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-03T14:36:36.976Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_007",
+        "enterpriseName": "食安（泉州市）食品科技有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-03T14:36:36.976Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_006",
+        "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-03T14:36:36.976Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_008",
+        "enterpriseName": "南安市源康餐饮管理有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-03T14:36:36.976Z"
+      }
+    ],
+    "determinationMethod": "线下随机确定",
+    "confirmationTime": "2026-06-03T14:36:36.976Z",
+    "status": "已确认",
+    "createdAt": "2026-06-03T14:36:36.976Z",
+    "updatedAt": "2026-06-03T14:36:36.976Z"
+  }
+]

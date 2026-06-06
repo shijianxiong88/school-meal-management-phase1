@@ -6,6 +6,7 @@ test-results/
 
 # Local runtime files
 token.txt
+debug*.log
 server/*.log
 server/temp_b64*.txt
 
@@ -20,3 +21,4 @@ server/data/*.png
 # Local environment
 .env
 .env.*
+.superpowers/

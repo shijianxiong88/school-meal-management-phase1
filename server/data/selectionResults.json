@@ -1,1 +1,130 @@
-[]
+[
+  {
+    "id": "sel_res_1780411337125",
+    "announcementId": "sel_ann_1780411063233",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "winningEnterprise": {
+      "enterpriseId": "catering_2025_2027_002",
+      "enterpriseName": "晋江市晋美餐饮管理有限公司"
+    },
+    "voteResults": [
+      {
+        "enterpriseId": "catering_2025_2027_010",
+        "enterpriseName": "福建中禾食品科技有限责任公司",
+        "votes": "100"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_002",
+        "enterpriseName": "晋江市晋美餐饮管理有限公司",
+        "votes": "150"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "votes": "20"
+      }
+    ],
+    "determinationMethod": "投票",
+    "determinationTime": "2026-06-02T14:42:17.125Z",
+    "determinationBy": "家长代表",
+    "parentRepresentatives": [
+      ""
+    ],
+    "remarks": "",
+    "createdAt": "2026-06-02T14:42:17.125Z",
+    "updatedAt": "2026-06-02T14:42:17.125Z"
+  },
+  {
+    "id": "sel_res_1780674809530",
+    "announcementId": "sel_ann_1780414764788",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "roundNo": 1,
+    "status": "需二次投票",
+    "winningEnterprise": null,
+    "voteResults": [
+      {
+        "enterpriseId": "catering_2025_2027_006",
+        "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+        "votes": "100"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_005",
+        "enterpriseName": "泉州美尔佳餐饮管理有限公司",
+        "votes": "95"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "votes": "85"
+      }
+    ],
+    "voteTime": "2026-06-05",
+    "voteLocation": "aaa",
+    "parentAttendance": 280,
+    "validVotes": 280,
+    "revoteEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_006",
+        "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+        "votes": 100
+      },
+      {
+        "enterpriseId": "catering_2025_2027_005",
+        "enterpriseName": "泉州美尔佳餐饮管理有限公司",
+        "votes": 95
+      }
+    ],
+    "determinationMethod": "投票",
+    "determinationTime": "2026-06-05T15:53:29.530Z",
+    "determinationBy": "家长代表",
+    "parentRepresentatives": [
+      ""
+    ],
+    "remarks": "",
+    "createdAt": "2026-06-05T15:53:29.530Z",
+    "updatedAt": "2026-06-05T15:53:29.530Z"
+  },
+  {
+    "id": "sel_res_1780674846770",
+    "announcementId": "sel_ann_1780414764788",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "roundNo": 2,
+    "status": "已确定",
+    "winningEnterprise": {
+      "enterpriseId": "catering_2025_2027_006",
+      "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+      "votes": 150,
+      "totalVotes": 280,
+      "voteRatio": 0.5357142857142857
+    },
+    "voteResults": [
+      {
+        "enterpriseId": "catering_2025_2027_006",
+        "enterpriseName": "泉州市悦泰餐饮服务有限公司",
+        "votes": "150"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_005",
+        "enterpriseName": "泉州美尔佳餐饮管理有限公司",
+        "votes": "130"
+      }
+    ],
+    "voteTime": "2026-06-05",
+    "voteLocation": "aaa",
+    "parentAttendance": 280,
+    "validVotes": 280,
+    "revoteEnterprises": [],
+    "determinationMethod": "投票",
+    "determinationTime": "2026-06-05T15:54:06.770Z",
+    "determinationBy": "家长代表",
+    "parentRepresentatives": [
+      ""
+    ],
+    "remarks": "",
+    "createdAt": "2026-06-05T15:54:06.770Z",
+    "updatedAt": "2026-06-05T15:54:06.770Z"
+  }
+]
