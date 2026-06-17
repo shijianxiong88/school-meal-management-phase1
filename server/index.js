@@ -23,6 +23,28 @@ app.use((req, res, next) => {
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, '../public')));
 
+function loadLocalEnv() {
+    const envPath = path.join(__dirname, '../.env');
+    if (!fs.existsSync(envPath)) return;
+
+    const lines = fs.readFileSync(envPath, 'utf-8').split(/\r?\n/);
+    lines.forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return;
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex <= 0) return;
+
+        const key = trimmed.slice(0, eqIndex).trim();
+        let value = trimmed.slice(eqIndex + 1).trim();
+        value = value.replace(/^["']|["']$/g, '');
+        if (key && process.env[key] === undefined) {
+            process.env[key] = value;
+        }
+    });
+}
+
+loadLocalEnv();
+
 // ============ Data File Helpers ============
 const DATA_DIR = path.join(__dirname, 'data');
 
@@ -67,6 +89,25 @@ const {
     determineVotingWinner
 } = require('./selectionRules');
 const { buildSelectionWorkflowDetail } = require('./selectionWorkflow');
+const ocrParser = require('./ocrParser');
+const {
+    LICENSE_TYPES,
+    LICENSE_STATUSES,
+    normalizeLicenseType,
+    normalizeEnterpriseLicenseInput,
+    detectLicenseTypeFromText,
+    validateEnterpriseLicenseInput,
+    applyLicenseVersioning,
+    currentEnterpriseLicenses,
+    buildCredentialRows,
+    attachCurrentLicensesToEnterprises,
+    applyLicenseToEnterpriseRecord
+} = require('./enterpriseLicenseRules');
+const {
+    createBackupPackage,
+    restoreBackupPackage,
+    timestampForFilename
+} = require('./backupService');
 const SECRET_KEY = 'school-meal-secret-key-2026';
 
 function generateToken(user) {
@@ -243,10 +284,10 @@ app.post('/api/config/academic-year', authMiddleware, roleMiddleware('admin'), (
 
 // ============ OCR 配置 ============
 const OCR_CONFIG = {
-    // 百度OCR配置（请替换为您的密钥）
+    // 百度OCR配置：优先读取环境变量，未配置时使用这里的默认值。
     baidu: {
-        apiKey: 'DhDXlfEbGA2M70YKsD6tNXBB',      // 替换为您的 API Key
-        secretKey: 'wcQMhG48KzOLMJWYOY1PbsBIwVPcNR9X',   // 替换为您的 Secret Key
+        apiKey: process.env.BAIDU_OCR_API_KEY || 'DhDXlfEbGA2M70YKsD6tNXBB',
+        secretKey: process.env.BAIDU_OCR_SECRET_KEY || 'wcQMhG48KzOLMJWYOY1PbsBIwVPcNR9X',
         enabled: true  // 设置为 true 启用百度OCR
     },
     // 腾讯OCR配置
@@ -257,18 +298,79 @@ const OCR_CONFIG = {
     }
 };
 
+const BAIDU_OCR_ENDPOINTS = {
+    businessLicense: 'https://aip.baidubce.com/rest/2.0/ocr/v1/business_license',
+    foodBusinessLicense: 'https://aip.baidubce.com/rest/2.0/ocr/v1/food_business_license',
+    accurateBasic: 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic',
+    generalBasic: 'https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic'
+};
+
+let baiduTokenCache = {
+    accessToken: '',
+    expiresAt: 0
+};
+
 // 获取百度Access Token
 async function getBaiduAccessToken() {
     if (!OCR_CONFIG.baidu.apiKey || !OCR_CONFIG.baidu.secretKey) {
         throw new Error('百度OCR未配置密钥');
     }
-    const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${OCR_CONFIG.baidu.apiKey}&client_secret=${OCR_CONFIG.baidu.secretKey}`;
+
+    if (baiduTokenCache.accessToken && Date.now() < baiduTokenCache.expiresAt) {
+        return baiduTokenCache.accessToken;
+    }
+
+    const params = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: OCR_CONFIG.baidu.apiKey,
+        client_secret: OCR_CONFIG.baidu.secretKey
+    });
+    const url = `https://aip.baidubce.com/oauth/2.0/token?${params.toString()}`;
     const res = await fetch(url, { method: 'POST' });
     const data = await res.json();
     if (data.access_token) {
+        const expiresInMs = Math.max(Number(data.expires_in || 0) - 300, 0) * 1000;
+        baiduTokenCache = {
+            accessToken: data.access_token,
+            expiresAt: Date.now() + expiresInMs
+        };
         return data.access_token;
     }
     throw new Error(data.error_description || '获取百度Access Token失败');
+}
+
+async function getOcrImageBase64({ imageUrl, imageBase64 }) {
+    if (imageBase64) {
+        return imageBase64.includes(',') ? imageBase64.split(',').pop() : imageBase64;
+    }
+    if (!imageUrl) {
+        throw new Error('请提供图片URL或Base64数据');
+    }
+
+    const fullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:${PORT}${imageUrl}`;
+    const imgRes = await fetch(fullUrl);
+    if (!imgRes.ok) {
+        throw new Error('读取证照图片失败');
+    }
+    const imgBuffer = await imgRes.arrayBuffer();
+    return Buffer.from(imgBuffer).toString('base64');
+}
+
+async function callBaiduOcr(endpointUrl, imageData, extraParams = {}) {
+    const accessToken = await getBaiduAccessToken();
+    const params = new URLSearchParams({ image: imageData, ...extraParams });
+    const ocrRes = await fetch(`${endpointUrl}?access_token=${encodeURIComponent(accessToken)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    });
+    const ocrData = await ocrRes.json();
+    if (ocrData.error_code) {
+        const err = new Error(ocrData.error_msg || 'OCR识别失败');
+        err.ocrData = ocrData;
+        throw err;
+    }
+    return ocrData;
 }
 
 // ============ Routes ============
@@ -534,7 +636,44 @@ app.post('/api/users/batch-import', authMiddleware, roleMiddleware('admin'), (re
 
 // Multer setup for file upload
 const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+
+app.get('/api/system/backup', authMiddleware, roleMiddleware('admin'), (req, res) => {
+    try {
+        const backup = createBackupPackage({
+            dataDir: DATA_DIR,
+            uploadsDir: path.join(__dirname, 'uploads')
+        });
+        const filename = `school-meal-backup-${timestampForFilename()}.json`;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.json(backup);
+    } catch (err) {
+        res.status(500).json({ error: err.message || '备份生成失败' });
+    }
+});
+
+app.post('/api/system/restore', authMiddleware, roleMiddleware('admin'), upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: '请选择备份文件' });
+
+        let backup;
+        try {
+            backup = JSON.parse(req.file.buffer.toString('utf8'));
+        } catch (err) {
+            return res.status(400).json({ error: '备份文件不是有效的 JSON' });
+        }
+
+        const result = restoreBackupPackage(backup, {
+            dataDir: DATA_DIR,
+            uploadsDir: path.join(__dirname, 'uploads'),
+            backupsDir: path.join(__dirname, 'backups')
+        });
+        res.json({ message: '恢复成功', ...result });
+    } catch (err) {
+        res.status(400).json({ error: err.message || '恢复失败' });
+    }
+});
 
 app.post('/api/users/batch-import-file', upload.single('file'), authMiddleware, roleMiddleware('admin'), (req, res) => {
     if (!req.file) {
@@ -1706,6 +1845,50 @@ function handleSupplierBatchImportFile(req, res, type, dataFile, idPrefix) {
     res.json(processSupplierBatchImport(items, type, dataFile, idPrefix));
 }
 
+const ENTERPRISE_LICENSE_SOURCES = [
+    { role: 'ingredientSupplier', file: 'ingredientSuppliers.json', type: '食材供应商' },
+    { role: 'cateringCompany', file: 'cateringCompanies.json', type: '校外供餐企业' },
+    { role: 'operationSupplier', file: 'operationSuppliers.json', type: '委托经营供应商' },
+    { role: 'serviceSupplier', file: 'serviceSuppliers.json', type: '委托服务提供商' }
+];
+
+function withCurrentEnterpriseLicenses(records) {
+    return attachCurrentLicensesToEnterprises(records, readJSON('enterpriseLicenses.json'));
+}
+
+function findEnterpriseRecordForLicense(user, requestedEnterpriseId) {
+    if (user.role === 'admin') {
+        if (!requestedEnterpriseId) return null;
+        for (const source of ENTERPRISE_LICENSE_SOURCES) {
+            const record = readJSON(source.file).find(item => item.id === requestedEnterpriseId);
+            if (record) return { ...record, enterpriseType: source.type, file: source.file };
+        }
+        return null;
+    }
+
+    const source = ENTERPRISE_LICENSE_SOURCES.find(item => item.role === user.role);
+    if (!source) return null;
+    const record = readJSON(source.file).find(item => item.userId === user.id) ||
+        readJSON(source.file).find(item => item.name === user.name);
+    if (!record) return null;
+    return { ...record, enterpriseType: source.type, file: source.file };
+}
+
+function syncEnterpriseRecordWithLicense(license) {
+    if (!license || (license.status || LICENSE_STATUSES.CURRENT) !== LICENSE_STATUSES.CURRENT) return;
+    for (const source of ENTERPRISE_LICENSE_SOURCES) {
+        const records = readJSON(source.file);
+        const idx = records.findIndex(item => item.id === license.enterpriseId);
+        if (idx === -1) continue;
+        records[idx] = {
+            ...applyLicenseToEnterpriseRecord(records[idx], license),
+            updatedAt: new Date().toISOString()
+        };
+        writeJSON(source.file, records);
+        return;
+    }
+}
+
 // --- Ingredient Suppliers ---
 app.get('/api/ingredient-suppliers', authMiddleware, (req, res) => {
     let suppliers = readJSON('ingredientSuppliers.json');
@@ -1714,6 +1897,7 @@ app.get('/api/ingredient-suppliers', authMiddleware, (req, res) => {
         suppliers = suppliers.filter(s => s.academicYear && s.academicYear === academicYear);
     }
     suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    suppliers = withCurrentEnterpriseLicenses(suppliers);
     sendListResponse(req, res, suppliers, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
 });
 
@@ -1734,7 +1918,7 @@ app.post('/api/ingredient-suppliers/batch-import-file', upload.single('file'), a
 
 app.get('/api/ingredient-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('ingredientSuppliers.json');
-    const supplier = suppliers.find(s => s.id === req.params.id);
+    const supplier = withCurrentEnterpriseLicenses(suppliers).find(s => s.id === req.params.id);
     const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
     if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
     if (!supplier) return res.status(404).json({ error: '供应商不存在' });
@@ -1788,6 +1972,7 @@ app.get('/api/catering-companies', authMiddleware, (req, res) => {
     }
     companies = filterEnterpriseRecordsForUser(companies, req.user);
     companies = withComputedCateringCurrentSupply(companies);
+    companies = withCurrentEnterpriseLicenses(companies);
     sendListResponse(req, res, companies, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
 });
 
@@ -1809,7 +1994,7 @@ app.post('/api/catering-companies/batch-import-file', upload.single('file'), aut
 
 app.get('/api/catering-companies/:id', authMiddleware, (req, res) => {
     const companies = readJSON('cateringCompanies.json');
-    const computedCompanies = withComputedCateringCurrentSupply(companies);
+    const computedCompanies = withCurrentEnterpriseLicenses(withComputedCateringCurrentSupply(companies));
     const company = computedCompanies.find(c => c.id === req.params.id);
     const access = ensureEnterpriseRecordAccess(req.user, companies, req.params.id);
     if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
@@ -1863,6 +2048,7 @@ app.get('/api/operation-suppliers', authMiddleware, (req, res) => {
         suppliers = suppliers.filter(s => s.academicYear && s.academicYear === academicYear);
     }
     suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    suppliers = withCurrentEnterpriseLicenses(suppliers);
     sendListResponse(req, res, suppliers, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
 });
 
@@ -1885,7 +2071,7 @@ app.get('/api/operation-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('operationSuppliers.json');
     const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
     if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
-    res.json(access.record);
+    res.json(withCurrentEnterpriseLicenses([access.record])[0]);
 });
 
 app.post('/api/operation-suppliers', authMiddleware, (req, res) => {
@@ -1933,6 +2119,7 @@ app.get('/api/service-suppliers', authMiddleware, (req, res) => {
         suppliers = suppliers.filter(s => s.academicYear && s.academicYear === academicYear);
     }
     suppliers = filterEnterpriseRecordsForUser(suppliers, req.user);
+    suppliers = withCurrentEnterpriseLicenses(suppliers);
     sendListResponse(req, res, suppliers, ['name', 'code', 'companyType', 'region', 'legalPerson', 'phone']);
 });
 
@@ -1955,7 +2142,7 @@ app.get('/api/service-suppliers/:id', authMiddleware, (req, res) => {
     const suppliers = readJSON('serviceSuppliers.json');
     const access = ensureEnterpriseRecordAccess(req.user, suppliers, req.params.id);
     if (access.errorStatus) return res.status(access.errorStatus).json({ error: access.error });
-    res.json(access.record);
+    res.json(withCurrentEnterpriseLicenses([access.record])[0]);
 });
 
 app.post('/api/service-suppliers', authMiddleware, (req, res) => {
@@ -2001,26 +2188,7 @@ app.get('/api/credentials', authMiddleware, (req, res) => {
     const enterpriseLicenses = readJSON('enterpriseLicenses.json');
     let credentials = readJSON('credentials.json');
 
-    // 将 enterpriseLicenses 转换为 credentials 格式
-    const convertedLicenses = enterpriseLicenses.map(el => ({
-        id: el.id,
-        name: el.name,
-        ownerId: el.enterpriseId,
-        ownerName: el.enterpriseName || el.name,
-        ownerType: el.enterpriseType || '企业',
-        type: el.type,
-        licenseNo: el.licenseNo,
-        validFrom: el.validFrom,
-        validUntil: el.validUntil,
-        businessScope: el.businessScope,
-        imageUrl: el.imageUrl,
-        createdAt: el.createdAt,
-        updatedAt: el.updatedAt,
-        _source: 'enterpriseLicense'
-    }));
-
-    // 合并两个数据源
-    credentials = [...convertedLicenses, ...credentials];
+    credentials = buildCredentialRows(enterpriseLicenses, credentials);
 
     if (req.query.ownerId) {
         credentials = credentials.filter(c => c.ownerId === req.query.ownerId);
@@ -2035,18 +2203,7 @@ app.get('/api/credentials', authMiddleware, (req, res) => {
 app.get('/api/credentials/export', authMiddleware, (req, res) => {
     const enterpriseLicenses = readJSON('enterpriseLicenses.json');
     let credentials = readJSON('credentials.json');
-    const convertedLicenses = enterpriseLicenses.map(el => ({
-        id: el.id,
-        name: el.name,
-        ownerId: el.enterpriseId,
-        ownerName: el.enterpriseName || el.name,
-        ownerType: el.enterpriseType || '企业',
-        type: el.type,
-        licenseNo: el.licenseNo,
-        validFrom: el.validFrom,
-        validUntil: el.validUntil
-    }));
-    credentials = [...convertedLicenses, ...credentials];
+    credentials = buildCredentialRows(enterpriseLicenses, credentials);
     if (req.query.ownerId) credentials = credentials.filter(c => c.ownerId === req.query.ownerId);
     if (req.query.ownerType) credentials = credentials.filter(c => c.ownerType === req.query.ownerType);
     const rows = applyListQuery(credentials, { ...req.query, page: 1, pageSize: Number.MAX_SAFE_INTEGER }, ['name', 'ownerName', 'ownerType', 'type', 'licenseNo']).data
@@ -2071,13 +2228,13 @@ app.get('/api/school/enterprise-licenses', authMiddleware, (req, res) => {
         return res.status(403).json({ error: '只有学校用户才能访问此接口' });
     }
 
-    const schoolId = user.id;
+    const schoolId = user.schoolId || user.id;
     const now = new Date();
 
     // 1. 获取该校的有效合同
     const contracts = readJSON('contracts.json');
     const validContracts = contracts.filter(c => {
-        if (c.relatedSchoolId !== schoolId) return false;
+        if (![c.relatedSchoolId, c.schoolId].includes(schoolId) && c.relatedSchoolId !== user.id) return false;
         const startDate = new Date(c.startDate);
         const endDate = new Date(c.endDate);
         return now >= startDate && now <= endDate;
@@ -2090,13 +2247,14 @@ app.get('/api/school/enterprise-licenses', authMiddleware, (req, res) => {
 
     // 3. 获取这些企业的证照（按名称匹配）
     const allLicenses = readJSON('enterpriseLicenses.json');
-    const enterpriseLicenses = allLicenses.filter(l => enterpriseNames.includes(l.name));
+    const enterpriseLicenses = currentEnterpriseLicenses(allLicenses)
+        .filter(l => enterpriseNames.includes(l.enterpriseName || l.name));
 
     console.log('匹配到', enterpriseLicenses.length, '条证照');
 
     // 4. 转换为credentials格式并附加合同信息
     const result = enterpriseLicenses.map(el => {
-        const contract = validContracts.find(c => c.ownerName === el.name);
+        const contract = validContracts.find(c => c.ownerName === (el.enterpriseName || el.name));
         return {
             id: el.id,
             name: el.name,
@@ -3449,55 +3607,14 @@ app.get('/api/enterprise-licenses', authMiddleware, (req, res) => {
     const licenses = readJSON('enterpriseLicenses.json');
     const user = req.user;
 
-    // 获取企业信息
-    const roleTypeMap = {
-        'ingredientSupplier': '食材供应商',
-        'cateringCompany': '校外供餐企业',
-        'operationSupplier': '委托经营供应商',
-        'serviceSupplier': '委托服务提供商'
-    };
-    const enterpriseType = roleTypeMap[user.role] || '企业';
-
-    // 获取企业ID：优先从企业记录查找，找不到则使用用户ID
-    let enterpriseId = user.id; // 默认使用用户ID
-    let enterpriseName = user.name || '';
-
-    if (user.role === 'ingredientSupplier') {
-        const suppliers = readJSON('ingredientSuppliers.json');
-        const supplier = suppliers.find(s => s.userId === user.id) || suppliers.find(s => s.name === user.name);
-        if (supplier) {
-            enterpriseId = supplier.id;
-            enterpriseName = supplier.name;
-        }
-    } else if (user.role === 'cateringCompany') {
-        const companies = readJSON('cateringCompanies.json');
-        const company = companies.find(c => c.userId === user.id) || companies.find(c => c.name === user.name);
-        if (company) {
-            enterpriseId = company.id;
-            enterpriseName = company.name;
-        }
-    } else if (user.role === 'operationSupplier') {
-        const suppliers = readJSON('operationSuppliers.json');
-        const supplier = suppliers.find(s => s.userId === user.id) || suppliers.find(s => s.name === user.name);
-        if (supplier) {
-            enterpriseId = supplier.id;
-            enterpriseName = supplier.name;
-        }
-    } else if (user.role === 'serviceSupplier') {
-        const suppliers = readJSON('serviceSuppliers.json');
-        const supplier = suppliers.find(s => s.userId === user.id) || suppliers.find(s => s.name === user.name);
-        if (supplier) {
-            enterpriseId = supplier.id;
-            enterpriseName = supplier.name;
-        }
-    }
-
     // 过滤出属于该企业的证照
     // admin角色可以看到所有证照，其他角色只看自己的
     let filtered;
     if (user.role === 'admin') {
         filtered = licenses; // 管理员看到所有证照
     } else {
+        const enterprise = findEnterpriseRecordForLicense(user);
+        const enterpriseId = enterprise?.id || user.id;
         filtered = licenses.filter(l => l.enterpriseId === enterpriseId);
     }
     res.json(filtered);
@@ -3508,46 +3625,37 @@ app.post('/api/enterprise-licenses', authMiddleware, (req, res) => {
     const licenses = readJSON('enterpriseLicenses.json');
     const user = req.user;
 
-    const roleTypeMap = {
-        'ingredientSupplier': '食材供应商',
-        'cateringCompany': '校外供餐企业',
-        'operationSupplier': '委托经营供应商',
-        'serviceSupplier': '委托服务提供商'
-    };
-    const enterpriseType = roleTypeMap[user.role] || '企业';
+    const enterprise = findEnterpriseRecordForLicense(user, req.body.enterpriseId);
+    if (user.role === 'admin' && !enterprise) {
+        return res.status(400).json({ error: '请选择有效的所属企业' });
+    }
+    const enterpriseId = enterprise?.id || user.id;
+    const enterpriseName = enterprise?.name || user.name || '';
+    const enterpriseType = enterprise?.enterpriseType || '企业';
 
-    // 获取企业ID：优先从企业记录查找，找不到则使用用户ID
-    let enterpriseId = user.id;
-    let enterpriseName = user.name || '';
+    const now = new Date().toISOString();
+    const normalizedInput = normalizeEnterpriseLicenseInput({
+        ...req.body,
+        enterpriseName: req.body.enterpriseName || req.body.name || enterpriseName
+    });
+    const validation = validateEnterpriseLicenseInput(normalizedInput, { enterpriseId, enterpriseName, enterpriseType });
+    if (!validation.valid) {
+        return res.status(400).json({ error: '证照信息校验失败', errors: validation.errors, warnings: validation.warnings });
+    }
 
-    if (user.role === 'ingredientSupplier') {
-        const suppliers = readJSON('ingredientSuppliers.json');
-        const supplier = suppliers.find(s => s.userId === user.id) || suppliers.find(s => s.name === user.name);
-        if (supplier) {
-            enterpriseId = supplier.id;
-            enterpriseName = supplier.name;
-        }
-    } else if (user.role === 'cateringCompany') {
-        const companies = readJSON('cateringCompanies.json');
-        const company = companies.find(c => c.userId === user.id) || companies.find(c => c.name === user.name);
-        if (company) {
-            enterpriseId = company.id;
-            enterpriseName = company.name;
-        }
-    } else if (user.role === 'operationSupplier') {
-        const suppliers = readJSON('operationSuppliers.json');
-        const supplier = suppliers.find(s => s.userId === user.id) || suppliers.find(s => s.name === user.name);
-        if (supplier) {
-            enterpriseId = supplier.id;
-            enterpriseName = supplier.name;
-        }
-    } else if (user.role === 'serviceSupplier') {
-        const suppliers = readJSON('serviceSuppliers.json');
-        const supplier = suppliers.find(s => s.userId === user.id) || suppliers.find(s => s.name === user.name);
-        if (supplier) {
-            enterpriseId = supplier.id;
-            enterpriseName = supplier.name;
-        }
+    const duplicate = licenses.find(l =>
+        l.enterpriseId === enterpriseId &&
+        normalizeLicenseType(l.type) === validation.data.type &&
+        l.licenseNo === validation.data.licenseNo &&
+        (l.status || LICENSE_STATUSES.CURRENT) === LICENSE_STATUSES.CURRENT
+    );
+
+    if (duplicate && !req.body.confirmDuplicate) {
+        return res.status(409).json({
+            error: '可能重复上传同一证照',
+            duplicateId: duplicate.id,
+            requiresConfirmation: true
+        });
     }
 
     const license = {
@@ -3555,13 +3663,14 @@ app.post('/api/enterprise-licenses', authMiddleware, (req, res) => {
         enterpriseId,
         enterpriseName,
         enterpriseType,
-        ...req.body,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        ...validation.data,
+        createdAt: now,
+        updatedAt: now
     };
-    licenses.push(license);
-    writeJSON('enterpriseLicenses.json', licenses);
-    res.json(license);
+    const versioned = applyLicenseVersioning(licenses, license, now);
+    writeJSON('enterpriseLicenses.json', versioned.licenses);
+    syncEnterpriseRecordWithLicense(versioned.license);
+    res.json({ license: versioned.license, replacedIds: versioned.replacedIds, warnings: validation.warnings });
 });
 
 // 删除证照
@@ -3600,8 +3709,15 @@ app.delete('/api/enterprise-licenses/:id', authMiddleware, (req, res) => {
         return res.status(403).json({ error: '无权删除此证照' });
     }
 
-    const filtered = licenses.filter(l => l.id !== req.params.id);
-    writeJSON('enterpriseLicenses.json', filtered);
+    const now = new Date().toISOString();
+    const updated = licenses.map(l => l.id === req.params.id ? {
+        ...l,
+        status: LICENSE_STATUSES.VOIDED,
+        voidedAt: now,
+        voidReason: req.body?.reason || '用户作废',
+        updatedAt: now
+    } : l);
+    writeJSON('enterpriseLicenses.json', updated);
     res.json({ message: '删除成功' });
 });
 
@@ -3652,6 +3768,194 @@ app.delete('/api/enterprise-licenses/upload/:filename', authMiddleware, (req, re
 });
 
 // --- OCR识别API ---
+async function runBusinessLicenseOcr(payload) {
+    const imageData = await getOcrImageBase64(payload);
+    const ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.businessLicense, imageData);
+    return ocrParser.parseBaiduOcrResult(ocrData);
+}
+
+async function runGeneralOcr(payload) {
+    const imageData = await getOcrImageBase64(payload);
+    const ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.generalBasic, imageData, {
+        detect_direction: 'true',
+        recognize_granularity: 'small'
+    });
+    return {
+        text: ocrData.words_result ? ocrData.words_result.map(w => w.words).join('\n') : '',
+        words_result: ocrData.words_result || []
+    };
+}
+
+async function runFoodLicenseOcr(payload) {
+    const imageData = await getOcrImageBase64(payload);
+    let specializedResult = null;
+    try {
+        const ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.foodBusinessLicense, imageData);
+        specializedResult = ocrParser.parseGeneralOcrForFoodLicense(ocrData);
+    } catch (err) {
+        console.log('食品经营许可证专用OCR失败，尝试通用OCR:', err.message);
+    }
+
+    if (specializedResult && getFoodOcrQualityScore(specializedResult) >= 6) {
+        return specializedResult;
+    }
+
+    const generalData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.generalBasic, imageData, {
+        detect_direction: 'true',
+        recognize_granularity: 'small'
+    });
+    const generalResult = ocrParser.parseGeneralOcrForFoodLicense(generalData);
+    if (!specializedResult || getFoodOcrQualityScore(generalResult) >= getFoodOcrQualityScore(specializedResult)) {
+        return generalResult;
+    }
+    return specializedResult;
+}
+
+function getFoodOcrQualityScore(result) {
+    if (!result) return 0;
+    let score = 0;
+    if (result.name && /(公司|店|学校|幼儿园|食堂|餐厅|中心)/.test(result.name)) score += 1;
+    if (/^JY[0-9A-Z]{10,20}$/i.test(result.licenseNo || '')) score += 2;
+    if (result.legalPerson && !/[:：无]/.test(result.legalPerson)) score += 1;
+    if (result.address && /(省|市|县|区|路|街|镇|村|号|楼)/.test(result.address)) score += 1;
+    if (result.validUntil) score += 1;
+    if (result.businessScope && /(食品|热食|冷藏|餐饮)/.test(result.businessScope)) score += 1;
+    if (result.subjectType && /(餐饮|食堂|经营者|单位)/.test(result.subjectType)) score += 1;
+    if (result.issueAuthority && /市场监督/.test(result.issueAuthority)) score += 1;
+    if (result.supervisionAgency && /市场监督/.test(result.supervisionAgency)) score += 1;
+    return score;
+}
+
+function extractRecognizedText(ocrResult) {
+    if (!ocrResult) return '';
+    if (ocrResult.text) return ocrResult.text;
+    if (Array.isArray(ocrResult.words_result)) {
+        return ocrResult.words_result.map(item => item.words || item.word || '').filter(Boolean).join('\n');
+    }
+    if (ocrResult.words_result && typeof ocrResult.words_result === 'object') {
+        return Object.entries(ocrResult.words_result)
+            .map(([key, value]) => `${key}: ${Array.isArray(value) ? (value[0]?.word || value[0]?.words || '') : (value?.word || value?.words || value || '')}`)
+            .filter(Boolean)
+            .join('\n');
+    }
+    return [
+        ocrResult.name,
+        ocrResult.licenseNo,
+        ocrResult.type,
+        ocrResult.legalPerson,
+        ocrResult.businessScope
+    ].filter(Boolean).join('\n');
+}
+
+function comparableLicenseName(value) {
+    return String(value || '')
+        .replace(/营业执照|食品经营许可证|正本|副本/g, '')
+        .replace(/\s+/g, '')
+        .trim();
+}
+
+function extractFoodLicenseNoTail(text) {
+    const lines = String(text || '').split(/\r?\n/);
+    const labelIndex = lines.findIndex(line => line.replace(/\s+/g, '').includes('许可证编号'));
+    if (labelIndex >= 0) {
+        for (let i = labelIndex + 1; i < lines.length && i <= labelIndex + 8; i++) {
+            const value = lines[i].replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+            if (/^[0-9A-Z]{6,18}$/.test(value)) {
+                return value.startsWith('JY') ? '' : value;
+            }
+        }
+    }
+
+    const compactText = String(text || '').replace(/\s+/g, '');
+    const labeled = compactText.match(/许可证编号[:：]?([0-9A-Z]{6,18})/i);
+    if (!labeled) return '';
+    const value = labeled[1].toUpperCase();
+    return value.startsWith('JY') ? '' : value;
+}
+
+function completeFoodLicenseNoFromHistory(result, recognizedText) {
+    if (normalizeLicenseType(result?.type) !== LICENSE_TYPES.FOOD) return result;
+    if (/^JY[0-9A-Z]{10,20}$/i.test(result?.licenseNo || '')) return result;
+
+    const tail = extractFoodLicenseNoTail(recognizedText);
+    const currentName = comparableLicenseName(result?.enterpriseName || result?.name);
+    if (!tail || !currentName) return result;
+
+    const matches = readJSON('enterpriseLicenses.json').filter(license => {
+        const licenseNo = String(license.licenseNo || '').toUpperCase();
+        if (normalizeLicenseType(license.type) !== LICENSE_TYPES.FOOD) return false;
+        if (!/^JY[0-9A-Z]{10,20}$/.test(licenseNo)) return false;
+        if (!licenseNo.endsWith(tail)) return false;
+
+        const historyName = comparableLicenseName(license.enterpriseName || license.name);
+        return historyName === currentName || historyName.includes(currentName) || currentName.includes(historyName);
+    });
+
+    const uniqueNos = [...new Set(matches.map(license => String(license.licenseNo || '').toUpperCase()))];
+    if (uniqueNos.length !== 1) return result;
+    return { ...result, licenseNo: uniqueNos[0] };
+}
+
+function toUnifiedOcrPayload(result, preferredType) {
+    const recognizedText = extractRecognizedText(result);
+    const completedResult = completeFoodLicenseNoFromHistory(result, recognizedText);
+    const detected = detectLicenseTypeFromText(`${recognizedText}\n${completedResult?.type || ''}`);
+    const normalizedPreferred = normalizeLicenseType(preferredType || '');
+    const suggestedType = [LICENSE_TYPES.BUSINESS, LICENSE_TYPES.FOOD].includes(normalizedPreferred)
+        ? normalizedPreferred
+        : normalizeLicenseType(completedResult?.type || detected.suggestedType || '');
+    return {
+        suggestedType,
+        confidence: detected.confidence,
+        fields: normalizeEnterpriseLicenseInput({
+            type: suggestedType,
+            enterpriseName: completedResult?.enterpriseName || completedResult?.name,
+            licenseNo: completedResult?.licenseNo,
+            legalPerson: completedResult?.legalPerson,
+            validFrom: completedResult?.validFrom,
+            validUntil: completedResult?.validUntil,
+            businessScope: completedResult?.businessScope,
+            address: completedResult?.address,
+            issueAuthority: completedResult?.issueAuthority,
+            issueDate: completedResult?.issueDate,
+            establishDate: completedResult?.establishDate,
+            subjectType: completedResult?.subjectType,
+            supervisionAgency: completedResult?.supervisionAgency,
+            imageUrl: completedResult?.imageUrl
+        }),
+        recognizedText
+    };
+}
+
+app.post('/api/enterprise-licenses/ocr', authMiddleware, async (req, res) => {
+    try {
+        const { preferredType, imageUrl, imageBase64 } = req.body;
+        const payload = { imageUrl, imageBase64 };
+        const normalizedPreferred = normalizeLicenseType(preferredType);
+
+        if (normalizedPreferred === LICENSE_TYPES.FOOD) {
+            const result = await runFoodLicenseOcr(payload);
+            return res.json(toUnifiedOcrPayload(result, LICENSE_TYPES.FOOD));
+        }
+
+        if (normalizedPreferred === LICENSE_TYPES.BUSINESS) {
+            const result = await runBusinessLicenseOcr(payload);
+            return res.json(toUnifiedOcrPayload(result, LICENSE_TYPES.BUSINESS));
+        }
+
+        const general = await runGeneralOcr(payload);
+        const detected = detectLicenseTypeFromText(general.text);
+        const targetType = detected.suggestedType || LICENSE_TYPES.BUSINESS;
+        const result = targetType === LICENSE_TYPES.FOOD
+            ? await runFoodLicenseOcr(payload)
+            : await runBusinessLicenseOcr(payload);
+        return res.json(toUnifiedOcrPayload(result, targetType));
+    } catch (err) {
+        console.error('统一OCR识别错误:', err);
+        res.status(500).json({ error: err.message || 'OCR识别失败' });
+    }
+});
+
 // 百度营业执照OCR识别
 app.post('/api/ocr/business-license', authMiddleware, async (req, res) => {
     try {
@@ -3659,40 +3963,13 @@ app.post('/api/ocr/business-license', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: '百度OCR未启用，请联系管理员配置' });
         }
 
-        const { imageUrl, imageBase64 } = req.body;
-
-        // 获取access token
-        const accessToken = await getBaiduAccessToken();
-
-        // 准备图片数据
-        let imageData = '';
-        if (imageBase64) {
-            imageData = imageBase64;
-        } else if (imageUrl) {
-            // 如果是已上传的图片，先下载
-            const fullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:${PORT}${imageUrl}`;
-            const imgRes = await fetch(fullUrl);
-            const imgBuffer = await imgRes.arrayBuffer();
-            imageData = Buffer.from(imgBuffer).toString('base64');
-        } else {
-            return res.status(400).json({ error: '请提供图片URL或Base64数据' });
-        }
+        const imageData = await getOcrImageBase64(req.body);
 
         // 调用百度OCR API - 营业执照识别
-        const ocrUrl = 'https://aip.baidubce.com/rest/2.0/ocr/v1/business_license';
-        const ocrRes = await fetch(`${ocrUrl}?access_token=${accessToken}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `image=${encodeURIComponent(imageData)}`
-        });
-        const ocrData = await ocrRes.json();
-
-        if (ocrData.error_code) {
-            return res.status(400).json({ error: ocrData.error_msg || 'OCR识别失败' });
-        }
+        const ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.businessLicense, imageData);
 
         // 解析百度OCR返回的数据
-        const result = parseBaiduOcrResult(ocrData);
+        const result = ocrParser.parseBaiduOcrResult(ocrData);
         res.json(result);
     } catch (err) {
         console.error('OCR识别错误:', err);
@@ -3707,33 +3984,13 @@ app.post('/api/ocr/general', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: '百度OCR未启用，请联系管理员配置' });
         }
 
-        const { imageUrl, imageBase64 } = req.body;
-        const accessToken = await getBaiduAccessToken();
-
-        let imageData = '';
-        if (imageBase64) {
-            imageData = imageBase64;
-        } else if (imageUrl) {
-            const fullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:${PORT}${imageUrl}`;
-            const imgRes = await fetch(fullUrl);
-            const imgBuffer = await imgRes.arrayBuffer();
-            imageData = Buffer.from(imgBuffer).toString('base64');
-        } else {
-            return res.status(400).json({ error: '请提供图片URL或Base64数据' });
-        }
+        const imageData = await getOcrImageBase64(req.body);
 
         // 调用百度OCR API - 通用文字识别
-        const ocrUrl = 'https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic';
-        const ocrRes = await fetch(`${ocrUrl}?access_token=${accessToken}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `image=${encodeURIComponent(imageData)}&detect_direction=true&recognize_granularity=small`
+        const ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.generalBasic, imageData, {
+            detect_direction: 'true',
+            recognize_granularity: 'small'
         });
-        const ocrData = await ocrRes.json();
-
-        if (ocrData.error_code) {
-            return res.status(400).json({ error: ocrData.error_msg || 'OCR识别失败' });
-        }
 
         // 提取所有文字
         let text = '';
@@ -3755,257 +4012,28 @@ app.post('/api/ocr/food-license', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: '百度OCR未启用，请联系管理员配置' });
         }
 
-        const { imageUrl, imageBase64 } = req.body;
-        const accessToken = await getBaiduAccessToken();
+        const imageData = await getOcrImageBase64(req.body);
 
-        let imageData = '';
-        if (imageBase64) {
-            imageData = imageBase64;
-        } else if (imageUrl) {
-            const fullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:${PORT}${imageUrl}`;
-            const imgRes = await fetch(fullUrl);
-            const imgBuffer = await imgRes.arrayBuffer();
-            imageData = Buffer.from(imgBuffer).toString('base64');
-        } else {
-            return res.status(400).json({ error: '请提供图片URL或Base64数据' });
-        }
-
-        // 使用高精度文字识别（带位置信息）
-        let ocrUrl = 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic';
-        let ocrRes = await fetch(`${ocrUrl}?access_token=${accessToken}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `image=${encodeURIComponent(imageData)}&detect_direction=true&recognize_granularity=small`
-        });
-        let ocrData = await ocrRes.json();
-
-        // 如果高精度识别失败，尝试通用识别
-        if (ocrData.error_code) {
-            console.log('高精度OCR失败，尝试通用OCR:', ocrData.error_msg);
-            ocrUrl = 'https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic';
-            ocrRes = await fetch(`${ocrUrl}?access_token=${accessToken}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `image=${encodeURIComponent(imageData)}&detect_direction=true&recognize_granularity=small`
+        let ocrData;
+        try {
+            // 优先使用百度食品经营许可证专用接口。
+            ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.foodBusinessLicense, imageData);
+        } catch (err) {
+            console.log('食品经营许可证专用OCR失败，尝试通用OCR:', err.message);
+            ocrData = await callBaiduOcr(BAIDU_OCR_ENDPOINTS.accurateBasic, imageData, {
+                detect_direction: 'true',
+                recognize_granularity: 'small'
             });
-            ocrData = await ocrRes.json();
-        }
-
-        console.log('OCR原始返回:', JSON.stringify(ocrData).substring(0, 500));
-        if (ocrData.error_code) {
-            return res.status(400).json({ error: ocrData.error_msg || 'OCR识别失败' });
         }
 
         // 解析通用OCR结果，提取食品许可证字段
-        const result = parseGeneralOcrForFoodLicense(ocrData);
+        const result = ocrParser.parseGeneralOcrForFoodLicense(ocrData);
         res.json(result);
     } catch (err) {
         console.error('食品OCR识别错误:', err);
         res.status(500).json({ error: err.message || 'OCR识别失败' });
     }
 });
-
-// 从通用OCR结果中智能解析食品经营许可证字段
-function parseGeneralOcrForFoodLicense(data) {
-    const result = {
-        name: '',
-        licenseNo: '',
-        type: '食品经营许可证',
-        legalPerson: '',
-        validFrom: '',
-        validUntil: '',
-        businessScope: '',
-        words_result: data.words_result || []
-    };
-
-    // 提取所有识别的文字行
-    const lines = data.words_result ? data.words_result.map(w => w.words) : [];
-
-    console.log('食品许可证OCR识别行:', lines);
-
-    // 许可证编号模式（食品经营许可证编号：JY开头+数字）
-    const licensePattern = /^(JY[J0-9]{10,20})$/i;
-
-    // 社会信用代码模式（18位）
-    const creditCodePattern = /^([0-9A-Z]{18})$/;
-
-    // 建立字段索引：记录每个标签的位置
-    const fieldIndex = {};
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (/企业名称/.test(line)) fieldIndex.name = i;
-        else if (/证照类型/.test(line)) fieldIndex.type = i;
-        else if (/统一社会信用代码/.test(line)) fieldIndex.creditCode = i;
-        else if (/许可证编号/.test(line)) fieldIndex.licenseNo = i;
-        else if (/企业法人|法定代表人/.test(line)) fieldIndex.legalPerson = i;
-        else if (/有效期起/.test(line)) fieldIndex.validFrom = i;
-        else if (/有效期止/.test(line)) fieldIndex.validUntil = i;
-        else if (/经营项目|经营范围/.test(line)) fieldIndex.businessScope = i;
-    }
-
-    // 根据字段索引提取值
-    // 企业名称：找下一个字段之间的内容
-    if (typeof fieldIndex.name === 'number') {
-        const nextFieldIdx = Object.values(fieldIndex).filter(v => v > fieldIndex.name).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.name + 1; i < nextFieldIdx && i < fieldIndex.name + 5; i++) {
-            const line = lines[i].trim();
-            if (line.length > 5 && !/证照类型|统一社会信用代码|企业法人|有效期|经营项目/.test(line)) {
-                result.name = line;
-                break;
-            }
-        }
-    }
-
-    // 许可证编号：在"许可证编号"标签后，或者"统一社会信用代码"标签后（食品许可证填的是许可证号）
-    if (typeof fieldIndex.licenseNo === 'number') {
-        const nextFieldIdx = Object.values(fieldIndex).filter(v => v > fieldIndex.licenseNo).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.licenseNo + 1; i < nextFieldIdx && i < fieldIndex.licenseNo + 3; i++) {
-            const line = lines[i].trim();
-            if (licensePattern.test(line)) {
-                result.licenseNo = line.toUpperCase();
-                break;
-            }
-        }
-    }
-
-    // 如果"许可证编号"字段没找到，尝试"统一社会信用代码"字段（食品许可证上这个字段填的是许可证号）
-    if (!result.licenseNo && typeof fieldIndex.creditCode === 'number') {
-        const nextFieldIdx = Object.values(fieldIndex).filter(v => v > fieldIndex.creditCode).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.creditCode + 1; i < nextFieldIdx && i < fieldIndex.creditCode + 3; i++) {
-            const line = lines[i].trim();
-            if (licensePattern.test(line)) {
-                result.licenseNo = line.toUpperCase();
-                break;
-            }
-            // 也接受任何长度大于5的连续字符
-            if (!result.licenseNo && line.length > 5 && !/[\u4e00-\u9fa5]/.test(line)) {
-                result.licenseNo = line;
-                break;
-            }
-        }
-    }
-
-    // 企业法人
-    if (typeof fieldIndex.legalPerson === 'number') {
-        // 尝试从下一行提取（标签在上一行）
-        const nextFieldIdx = Object.values(fieldIndex).filter(v => v > fieldIndex.legalPerson).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.legalPerson + 1; i < nextFieldIdx && i < fieldIndex.legalPerson + 3; i++) {
-            const line = lines[i].trim().replace(/^\[N\/A\]/, ''); // 去掉[N/A]前缀
-            // 法人通常是2-4个汉字
-            if (/^[\u4e00-\u9fa5]{2,4}$/.test(line)) {
-                result.legalPerson = line;
-                break;
-            }
-        }
-    }
-
-    // 有效期起
-    if (typeof fieldIndex.validFrom === 'number') {
-        const nextFieldIdx = fieldIndex.validUntil || Object.values(fieldIndex).filter(v => v > fieldIndex.validFrom).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.validFrom + 1; i < nextFieldIdx && i < fieldIndex.validFrom + 3; i++) {
-            const line = lines[i].trim();
-            const dateMatch = line.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
-            if (dateMatch) {
-                result.validFrom = `${dateMatch[1]}-${dateMatch[2].padStart(2,'0')}-${dateMatch[3].padStart(2,'0')}`;
-                break;
-            }
-        }
-    }
-
-    // 有效期止
-    if (typeof fieldIndex.validUntil === 'number') {
-        const nextFieldIdx = Object.values(fieldIndex).filter(v => v > fieldIndex.validUntil).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.validUntil + 1; i < nextFieldIdx && i < fieldIndex.validUntil + 3; i++) {
-            const line = lines[i].trim();
-            const dateMatch = line.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
-            if (dateMatch) {
-                result.validUntil = `${dateMatch[1]}-${dateMatch[2].padStart(2,'0')}-${dateMatch[3].padStart(2,'0')}`;
-                break;
-            }
-            // 也接受"长期"
-            if (/长期/.test(line)) {
-                result.validUntil = '2099-12-31';
-                break;
-            }
-        }
-    }
-
-    // 经营范围
-    if (typeof fieldIndex.businessScope === 'number') {
-        const nextFieldIdx = Object.values(fieldIndex).filter(v => v > fieldIndex.businessScope).sort((a, b) => a - b)[0] || lines.length;
-        for (let i = fieldIndex.businessScope + 1; i < nextFieldIdx && i < fieldIndex.businessScope + 5; i++) {
-            const line = lines[i].trim();
-            if (line.length > 3 && !/企业名称|证照类型|统一社会信用代码|企业法人|有效期/.test(line)) {
-                result.businessScope = line;
-                break;
-            }
-        }
-    }
-
-    // 如果还没找到企业名称，尝试找最长的包含中文的行
-    if (!result.name) {
-        let longestLine = '';
-        for (const line of lines) {
-            if (line.length > longestLine.length && /[\u4e00-\u9fa5]{5,}/.test(line) && /(公司|企业|酒店|宾馆|学校|幼儿园)/.test(line)) {
-                longestLine = line;
-            }
-        }
-        if (longestLine) result.name = longestLine;
-    }
-
-    console.log('解析食品许可证结果:', result);
-    return result;
-}
-
-// 解析百度OCR结果
-function parseBaiduOcrResult(data) {
-    // 百度OCR返回结果在words_result字段中
-    const words = data.words_result || data;
-
-    const result = {
-        name: '',
-        licenseNo: '',
-        type: '其他', // 默认类型
-        legalPerson: '',
-        validFrom: '',
-        validUntil: '',
-        businessScope: ''
-    };
-
-    // 百度营业执照OCR返回的字段映射（支持多种key格式）
-    const nameKey = words.名称 || words.单位名称 || words.name || '';
-    const creditNoKey = words.统一社会信用代码 || words.证件编号 || words.creditCode || words.regNum || '';
-    const personKey = words.法定代表人 || words.法人 || words.person || '';
-    const businessKey = words.经营范围 || words.business || '';
-    const validDateKey = words.有效期 || words.validDate || '';
-
-    // 证照类型判断
-    if (words.证照类型 === 'food_business_license' || words.证照类型 === '食品经营许可证') {
-        result.type = '食品经营许可证';
-    } else if (words.证照类型 === 'business_license' || words.证照类型 === '营业执照') {
-        result.type = '营业执照';
-    } else if (businessKey && /食品经营/.test(businessKey)) {
-        result.type = '食品经营许可证';
-    } else if (businessKey && /营业/.test(businessKey)) {
-        result.type = '营业执照';
-    }
-
-    if (nameKey) result.name = typeof nameKey === 'object' ? nameKey.words : nameKey;
-    if (creditNoKey) result.licenseNo = typeof creditNoKey === 'object' ? creditNoKey.words : creditNoKey;
-    if (personKey) result.legalPerson = typeof personKey === 'object' ? personKey.words : personKey;
-    if (businessKey) result.businessScope = typeof businessKey === 'object' ? businessKey.words : businessKey;
-
-    if (validDateKey) {
-        const validDateStr = typeof validDateKey === 'object' ? validDateKey.words : validDateKey;
-        // 有效期格式：2020-01-01至2030-12-31 或 长期
-        const parts = validDateStr.split('至');
-        if (parts.length >= 1) result.validFrom = parts[0].trim();
-        if (parts.length >= 2) result.validUntil = parts[1].trim();
-    }
-
-    console.log('解析百度OCR结果:', result);
-    return result;
-}
 
 // --- Catch-all: serve index.html for SPA ---
 app.get('*', (req, res) => {

@@ -9,6 +9,7 @@ token.txt
 debug*.log
 server/*.log
 server/temp_b64*.txt
+server/backups/
 
 # Uploaded/runtime assets
 server/uploads/*
