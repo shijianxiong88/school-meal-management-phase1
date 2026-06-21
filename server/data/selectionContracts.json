@@ -45,5 +45,30 @@
     "remarks": "",
     "createdAt": "2026-06-05T16:18:56.125Z",
     "updatedAt": "2026-06-05T16:18:56.125Z"
+  },
+  {
+    "id": "sel_ctr_1782025682624",
+    "contractNo": "XL-CTR-2026-003",
+    "announcementId": "sel_ann_1781852836899",
+    "resultId": "sel_res_1782025459041",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "canteenId": null,
+    "canteenName": "",
+    "enterpriseId": "catering_2025_2027_015",
+    "enterpriseName": "泉州市瑞昇餐饮服务有限公司",
+    "contractStartDate": "2026-06-21",
+    "contractEndDate": "2027-06-21",
+    "contractAmount": "50",
+    "contractUnit": "万元/年",
+    "contractFileUrl": "",
+    "paymentTerms": "月结",
+    "mealStandard": "",
+    "dinerCount": "500",
+    "status": "已签订",
+    "signDate": "2026-06-21",
+    "remarks": "",
+    "createdAt": "2026-06-21T07:08:02.624Z",
+    "updatedAt": "2026-06-21T07:08:02.624Z"
   }
 ]

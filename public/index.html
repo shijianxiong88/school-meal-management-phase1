@@ -2670,6 +2670,9 @@
             const [results, setResults] = useState([]);
             const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
             const [inspectionForm, setInspectionForm] = useState(null);
+            const [workgroupForm, setWorkgroupForm] = useState({ memberCount: '', parentCount: '' });
+            const [emergencyEnterpriseIds, setEmergencyEnterpriseIds] = useState([]);
+            const [emergencySupplementIds, setEmergencySupplementIds] = useState([]);
             const { user } = useAuth();
 
             const statusToStep = (status) => ({
@@ -2688,7 +2691,16 @@
             const acceptedRegistrations = registrations.filter(r => ['审核通过', '已受理'].includes(r.status));
             const currentCandidateIds = selectedCandidateIds;
             const candidateRegistrations = registrations.filter(r => currentCandidateIds.includes(r.enterpriseId));
-            const passedInspections = inspections.filter(i => i.announcementId === selectedAnnouncement?.id && i.passed === true);
+            const latestInspectionsByEnterprise = Array.from(
+                inspections.reduce((map, inspection) => {
+                    const current = map.get(inspection.enterpriseId);
+                    const currentTime = new Date(current?.updatedAt || current?.createdAt || 0).getTime();
+                    const nextTime = new Date(inspection.updatedAt || inspection.createdAt || 0).getTime();
+                    if (!current || nextTime >= currentTime) map.set(inspection.enterpriseId, inspection);
+                    return map;
+                }, new Map()).values()
+            );
+            const passedInspections = latestInspectionsByEnterprise.filter(i => i.announcementId === selectedAnnouncement?.id && i.passed === true);
             const latestShortlisted = shortlisted.find(s => s.announcementId === selectedAnnouncement?.id);
             const shortlistedEnterprises = latestShortlisted?.shortlistedEnterprises?.length
                 ? latestShortlisted.shortlistedEnterprises
@@ -2697,6 +2709,36 @@
             const latestRevoteResult = results.find(r => r.announcementId === selectedAnnouncement?.id && r.status === '需二次投票');
             const latestResult = finalResult;
             const isWorkflowViewOnly = selectedAnnouncement?.status === '已完成';
+            const isExternalCateringSelection = selectedAnnouncement?.serviceType === '校外供餐';
+            const hasWorkgroupRegistration = !isExternalCateringSelection || !!selectedAnnouncement?.workgroupRegisteredAt;
+            const workgroupMemberCount = Number(workgroupForm.memberCount || 0);
+            const workgroupParentCount = Number(workgroupForm.parentCount || 0);
+            const workgroupParentRatio = workgroupMemberCount > 0 ? workgroupParentCount / workgroupMemberCount : 0;
+            const emergencyEnterpriseIdSet = new Set(emergencyEnterpriseIds);
+            const hasRegularAcceptedRegistration = acceptedRegistrations.some(r => !emergencyEnterpriseIdSet.has(r.enterpriseId));
+            const selectableCandidateRegistrations = isExternalCateringSelection && hasRegularAcceptedRegistration
+                ? acceptedRegistrations.filter(r => !emergencyEnterpriseIdSet.has(r.enterpriseId))
+                : acceptedRegistrations;
+            const latestCandidate = candidates[0];
+            const hasEmergencySupplementCandidate = latestCandidate?.source === 'emergencySupplement';
+            const regularCandidateRegistrations = candidateRegistrations.filter(r => !emergencyEnterpriseIdSet.has(r.enterpriseId));
+            const regularCandidateIds = regularCandidateRegistrations.map(r => r.enterpriseId);
+            const regularInspections = latestInspectionsByEnterprise.filter(i => regularCandidateIds.includes(i.enterpriseId));
+            const emergencyAcceptedRegistrations = acceptedRegistrations.filter(r => emergencyEnterpriseIdSet.has(r.enterpriseId));
+            const currentCandidateInspectionIds = new Set(
+                latestInspectionsByEnterprise
+                    .filter(i => currentCandidateIds.includes(i.enterpriseId) && (i.passed === true || i.passed === false))
+                    .map(i => i.enterpriseId)
+            );
+            const areCurrentCandidateInspectionsComplete = currentCandidateIds.length > 0
+                && currentCandidateIds.every(id => currentCandidateInspectionIds.has(id));
+            const canEnableEmergencySupplement = isExternalCateringSelection
+                && !hasEmergencySupplementCandidate
+                && regularCandidateIds.length > 0
+                && regularCandidateIds.length < 3
+                && regularInspections.length === regularCandidateIds.length
+                && regularInspections.every(i => i.passed === false)
+                && emergencyAcceptedRegistrations.length > 0;
             const voteTotal = (rows) => (rows || []).reduce((sum, row) => sum + Number(row.votes || 0), 0);
 
             const loadData = () => {
@@ -2716,6 +2758,10 @@
             };
 
             const openPublishModal = () => {
+                if (!hasWorkgroupRegistration) {
+                    alert('请先完成校外供餐遴选工作小组登记');
+                    return;
+                }
                 setPublishForm({
                     title: selectedAnnouncement?.title || '',
                     content: selectedAnnouncement?.content || '',
@@ -2755,15 +2801,25 @@
 
             const handleManageWorkflow = (announcement) => {
                 setSelectedAnnouncement(announcement);
+                setWorkgroupForm({
+                    memberCount: announcement.workgroupMemberCount ?? '',
+                    parentCount: announcement.workgroupParentCount ?? ''
+                });
                 // 加载现有数据
                 Promise.all([
                     apiFetch(`/selection/announcements/${announcement.id}/registrations`),
                     apiFetch('/selection/candidates'),
                     apiFetch('/selection/inspections'),
                     apiFetch('/selection/shortlisted'),
-                    apiFetch('/selection/results')
-                ]).then(([regs, cands, insps, shorts, res]) => {
+                    apiFetch('/selection/results'),
+                    announcement.serviceType === '校外供餐' ? apiFetch('/catering-companies') : Promise.resolve([])
+                ]).then(([regs, cands, insps, shorts, res, companies]) => {
                     setRegistrations(regs || []);
+                    const emergencyIds = (companies || [])
+                        .filter(company => company.应急备选企业 === '是' || company.emergencyBackup === '是')
+                        .map(company => company.id);
+                    setEmergencyEnterpriseIds(emergencyIds);
+                    const emergencyIdSet = new Set(emergencyIds);
                     const annCands = (cands || []).filter(c => c.announcementId === announcement.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                     setCandidates(annCands);
                     setInspections((insps || []).filter(i => i.announcementId === announcement.id));
@@ -2772,10 +2828,54 @@
                     const acceptedIds = (regs || [])
                         .filter(r => ['审核通过', '已受理'].includes(r.status))
                         .map(r => r.enterpriseId);
-                    setSelectedCandidateIds(annCands[0]?.confirmedEnterprises?.map(e => e.enterpriseId) || acceptedIds);
+                    const hasRegularAccepted = (regs || [])
+                        .filter(r => ['审核通过', '已受理'].includes(r.status))
+                        .some(r => !emergencyIdSet.has(r.enterpriseId));
+                    const selectableIds = announcement.serviceType === '校外供餐' && hasRegularAccepted
+                        ? acceptedIds.filter(id => !emergencyIdSet.has(id))
+                        : acceptedIds;
+                    setSelectedCandidateIds(annCands[0]?.confirmedEnterprises?.map(e => e.enterpriseId) || selectableIds);
+                    const emergencyAcceptedIds = (regs || [])
+                        .filter(r => ['审核通过', '已受理'].includes(r.status) && emergencyIdSet.has(r.enterpriseId))
+                        .map(r => r.enterpriseId);
+                    setEmergencySupplementIds(emergencyAcceptedIds.length < 5 ? emergencyAcceptedIds : emergencyAcceptedIds.slice(0, 5));
                     setCurrentStep(statusToStep(announcement.status));
                 });
                 setActiveTab('workflow');
+            };
+
+            const handleSaveWorkgroup = async () => {
+                const memberCount = Number(workgroupForm.memberCount);
+                const parentCount = Number(workgroupForm.parentCount);
+                if (!Number.isInteger(memberCount) || memberCount <= 0) {
+                    alert('成员总人数必须大于0');
+                    return;
+                }
+                if (!Number.isInteger(parentCount) || parentCount < 0) {
+                    alert('家长人数不能小于0');
+                    return;
+                }
+                if (parentCount > memberCount) {
+                    alert('家长人数不能超过成员总人数');
+                    return;
+                }
+                if (parentCount / memberCount < 0.8) {
+                    alert('家长人数占比不低于80%');
+                    return;
+                }
+                const d = await apiFetch(`/selection/announcements/${selectedAnnouncement.id}/workgroup`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ memberCount, parentCount })
+                });
+                if (d) {
+                    setToast('工作小组登记已保存');
+                    setSelectedAnnouncement(d);
+                    setWorkgroupForm({
+                        memberCount: d.workgroupMemberCount ?? '',
+                        parentCount: d.workgroupParentCount ?? ''
+                    });
+                    loadData();
+                }
             };
 
             const rollbackWorkflow = async () => {
@@ -2798,6 +2898,19 @@
             const [showAddRegModal, setShowAddRegModal] = useState(false);
             const [newReg, setNewReg] = useState({ enterpriseId: '', enterpriseName: '', contactPerson: '', contactPhone: '' });
             const [enterpriseList, setEnterpriseList] = useState([]);
+            const formatRegistrationEnterpriseName = (enterprise) => {
+                const isEmergencyBackup = enterprise?.应急备选企业 === '是' || enterprise?.emergencyBackup === '是';
+                if (selectedAnnouncement?.serviceType === '校外供餐' && isEmergencyBackup) {
+                    return `${enterprise.name}（应急备选）`;
+                }
+                return enterprise?.name || '';
+            };
+            const formatRegisteredEnterpriseName = (registration) => {
+                if (isExternalCateringSelection && emergencyEnterpriseIdSet.has(registration.enterpriseId)) {
+                    return `${registration.enterpriseName}（应急备选）`;
+                }
+                return registration.enterpriseName;
+            };
 
             const openAddRegModal = async () => {
                 try {
@@ -2861,7 +2974,7 @@
                 }
             };
 
-            // 步骤3: 确认备选企业
+            // 步骤3: 确认考察企业
             const toggleCandidate = (enterpriseId) => {
                 setSelectedCandidateIds(ids =>
                     ids.includes(enterpriseId) ? ids.filter(id => id !== enterpriseId) : [...ids, enterpriseId]
@@ -2869,7 +2982,10 @@
             };
 
             const handleConfirmCandidates = async () => {
-                const defaultIds = selectedCandidateIds.length ? selectedCandidateIds : acceptedRegistrations.map(r => r.enterpriseId);
+                const selectableIds = selectableCandidateRegistrations.map(r => r.enterpriseId);
+                const defaultIds = selectedCandidateIds.length
+                    ? selectedCandidateIds.filter(id => selectableIds.includes(id))
+                    : selectableIds;
                 const d = await apiFetch('/selection/candidates', {
                     method: 'POST',
                     body: JSON.stringify({
@@ -2878,7 +2994,7 @@
                     })
                 });
                 if (d) {
-                    setToast('备选企业已确认');
+                    setToast('考察企业已确认');
                     const updated = { ...selectedAnnouncement, status: '考察中' };
                     setSelectedAnnouncement(updated);
                     handleManageWorkflow(updated);
@@ -2890,25 +3006,40 @@
             const [showInspModal, setShowInspModal] = useState(false);
             const [inspData, setInspData] = useState({ enterpriseId: '', enterpriseName: '', inspectionTime: '', inspectionLocation: '', inspectors: '', inspectionResult: '', passed: null });
 
+            const findInspectionForRegistration = (reg) => latestInspectionsByEnterprise.find(i =>
+                i.announcementId === selectedAnnouncement?.id && i.enterpriseId === reg.enterpriseId
+            );
+
             const openInspectionModal = (reg) => {
-                setInspData({ enterpriseId: reg.enterpriseId, enterpriseName: reg.enterpriseName, inspectionTime: new Date().toISOString().split('T')[0], inspectionLocation: '', inspectors: '', inspectionResult: '', passed: null });
+                const existingInspection = findInspectionForRegistration(reg);
+                setInspectionForm(existingInspection || null);
+                setInspData({
+                    enterpriseId: reg.enterpriseId,
+                    enterpriseName: reg.enterpriseName,
+                    inspectionTime: existingInspection?.inspectionTime || new Date().toISOString().split('T')[0],
+                    inspectionLocation: existingInspection?.inspectionLocation || '',
+                    inspectors: existingInspection?.inspectors || '',
+                    inspectionResult: existingInspection?.inspectionResult || '',
+                    passed: existingInspection?.passed === true ? true : existingInspection?.passed === false ? false : null
+                });
                 setShowInspModal(true);
             };
 
             const handleSaveInspection = async () => {
+                if (inspData.passed !== true && inspData.passed !== false) {
+                    alert('考察结果为必填项');
+                    return;
+                }
+                if (inspData.passed === false && !inspData.inspectionResult.trim()) {
+                    alert('考察不通过时需填写原因');
+                    return;
+                }
                 const method = inspectionForm ? 'PUT' : 'POST';
                 const url = inspectionForm ? `/selection/inspections/${inspectionForm.id}` : '/selection/inspections';
                 const payload = { ...inspData, announcementId: selectedAnnouncement.id };
-                const passed = inspData.passed;
-                delete payload.passed;
                 if (inspectionForm) { delete payload.enterpriseId; delete payload.enterpriseName; }
                 const d = await apiFetch(url, { method, body: JSON.stringify(payload) });
                 if (d) {
-                    if (passed === true) {
-                        await apiFetch(`/selection/inspections/${d.id}/pass`, { method: 'POST', body: JSON.stringify({ comments: '考察通过' }) });
-                    } else if (passed === false) {
-                        await apiFetch(`/selection/inspections/${d.id}/fail`, { method: 'POST', body: JSON.stringify({ comments: '考察不通过' }) });
-                    }
                     setToast('考察记录已保存');
                     setShowInspModal(false);
                     setInspectionForm(null);
@@ -2924,6 +3055,46 @@
             const handleInspectionFail = async (inspId) => {
                 const d = await apiFetch(`/selection/inspections/${inspId}/fail`, { method: 'POST', body: JSON.stringify({ comments: '考察不通过' }) });
                 if (d) { setToast('考察未通过'); handleManageWorkflow(selectedAnnouncement); }
+            };
+
+            const toggleEmergencySupplement = (enterpriseId) => {
+                setEmergencySupplementIds(ids =>
+                    ids.includes(enterpriseId) ? ids.filter(id => id !== enterpriseId) : [...ids, enterpriseId]
+                );
+            };
+
+            const handleEmergencySupplement = async () => {
+                if (emergencyAcceptedRegistrations.length >= 5 && emergencySupplementIds.length < 5) {
+                    alert('符合条件的应急备选报名供应商不少于5家时，补充考察企业不少于5家');
+                    return;
+                }
+                if (emergencyAcceptedRegistrations.length < 5 && emergencySupplementIds.length !== emergencyAcceptedRegistrations.length) {
+                    alert('符合条件的应急备选报名供应商少于5家时，应全部确定为补充考察企业');
+                    return;
+                }
+                try {
+                    const d = await apiFetch('/selection/candidates/emergency-supplement', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            announcementId: selectedAnnouncement.id,
+                            enterpriseIds: emergencySupplementIds
+                        })
+                    });
+                    if (d) {
+                        const updated = { ...selectedAnnouncement, status: '考察中' };
+                        setToast('应急备选补充考察企业已确定');
+                        setCandidates(prev => [d, ...prev.filter(c => c.id !== d.id)]);
+                        setSelectedCandidateIds((d.confirmedEnterprises || []).map(e => e.enterpriseId));
+                        setSelectedAnnouncement(updated);
+                        handleManageWorkflow(updated);
+                        loadData();
+                    }
+                } catch (err) {
+                    if ((err.message || '').includes('已启用')) {
+                        handleManageWorkflow(selectedAnnouncement);
+                    }
+                    alert(err.message || '应急备选补充考察企业确认失败');
+                }
             };
 
             // 步骤5: 确定入围
@@ -3110,15 +3281,63 @@
 
                             <SelectionWorkflowStepper currentStep={currentStep} />
 
-                            {/* 步骤1: 发布公告 */}
+                            {/* 步骤1: 校外供餐遴选工作小组登记 */}
+                            {isExternalCateringSelection && (
+                                <div className="workflow-section">
+                                    <h4>① 校外供餐遴选工作小组登记</h4>
+                                    <div className="info-item">
+                                        <span>登记状态</span>
+                                        <span className={`status-badge ${selectedAnnouncement?.workgroupRegisteredAt ? 'status-已完成' : 'status-项目已立项'}`}>
+                                            {selectedAnnouncement?.workgroupRegisteredAt ? '已登记' : '未登记'}
+                                        </span>
+                                    </div>
+                                    {selectedAnnouncement?.workgroupRegisteredAt && (
+                                        <div className="info-item"><span>登记时间</span><span>{selectedAnnouncement.workgroupRegisteredAt.split('T')[0]}</span></div>
+                                    )}
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label>成员总人数 <span className="required">*</span></label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={workgroupForm.memberCount}
+                                                onChange={e => setWorkgroupForm({...workgroupForm, memberCount: e.target.value})}
+                                                disabled={isWorkflowViewOnly}
+                                                placeholder="请输入成员总人数"
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>家长人数 <span className="required">*</span></label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={workgroupForm.parentCount}
+                                                onChange={e => setWorkgroupForm({...workgroupForm, parentCount: e.target.value})}
+                                                disabled={isWorkflowViewOnly}
+                                                placeholder="请输入家长人数"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="info-item">
+                                        <span>家长占比</span>
+                                        <span>{workgroupMemberCount > 0 ? (workgroupParentRatio * 100).toFixed(1) + '%' : '-'}</span>
+                                    </div>
+                                    {!isWorkflowViewOnly && <button className="btn btn-primary" onClick={handleSaveWorkgroup}>保存工作小组登记</button>}
+                                </div>
+                            )}
+
+                            {/* 步骤2: 发布公告 */}
                             <div className="workflow-section">
-                                <h4>① 发布公告</h4>
+                                <h4>{isExternalCateringSelection ? '② 发布公告' : '① 发布公告'}</h4>
                                 <div className="info-item"><span>项目状态</span><span className={`status-badge status-${selectedAnnouncement?.status}`}>{selectedAnnouncement?.status}</span></div>
                                 <div className="info-item"><span>项目名称</span><span>{selectedAnnouncement?.title}</span></div>
                                 <div className="info-item"><span>公告状态</span><span className={`status-badge status-${selectedAnnouncement?.status}`}>{selectedAnnouncement?.status}</span></div>
                                 <div className="info-item"><span>发布时间</span><span>{selectedAnnouncement?.publishTime ? selectedAnnouncement.publishTime.split('T')[0] : '-'}</span></div>
                                 <div className="info-item"><span>发布网址</span><span>{selectedAnnouncement?.publishUrl || '-'}</span></div>
-                                {!isWorkflowViewOnly && ['项目已立项', '草稿'].includes(selectedAnnouncement?.status) && <button className="btn btn-primary" onClick={openPublishModal}>发起公告</button>}
+                                {isExternalCateringSelection && !hasWorkgroupRegistration && <p className="form-hint">请先完成校外供餐遴选工作小组登记后再发布公告。</p>}
+                                {!isWorkflowViewOnly && ['项目已立项', '草稿'].includes(selectedAnnouncement?.status) && (
+                                    <button className="btn btn-primary" onClick={openPublishModal} disabled={!hasWorkgroupRegistration}>发起公告</button>
+                                )}
                             </div>
 
                             {/* 步骤2: 学校录入并审核报名企业 */}
@@ -3130,7 +3349,7 @@
                                         <thead><tr><th>企业名称</th><th>联系人</th><th>联系电话</th><th>状态</th><th>原因</th><th>操作</th></tr></thead>
                                         <tbody>
                                             {registrations.map(r => <tr key={r.id}>
-                                                <td>{r.enterpriseName}</td>
+                                                <td>{formatRegisteredEnterpriseName(r)}</td>
                                                 <td>{r.contactPerson}</td>
                                                 <td>{r.contactPhone}</td>
                                                 <td>{r.status}</td>
@@ -3148,19 +3367,21 @@
                                 )}
                             </div>
 
-                            {/* 步骤3: 确定备选 */}
+                            {/* 步骤3: 确定考察企业 */}
                             {currentStep >= 2 && (
                                 <div className="workflow-section">
-                                    <h4>③ 确定备选企业</h4>
-                                    <p>审核通过企业：{acceptedRegistrations.length} 家。大于 5 家时，按线下随机结果勾选不少于 5 家；不超过 5 家时全部勾选。</p>
-                                    {acceptedRegistrations.map(r => (
+                                    <h4>③ 确定考察企业</h4>
+                                    <p>审核通过企业：{acceptedRegistrations.length} 家；当前可选企业：{selectableCandidateRegistrations.length} 家。可选企业大于 5 家时，按线下随机结果勾选不少于 5 家；不超过 5 家时全部勾选。</p>
+                                    {isExternalCateringSelection && hasRegularAcceptedRegistration && <p>已有非应急备选企业报名，本环节只能从非应急备选企业中确定考察企业名单。</p>}
+                                    {isExternalCateringSelection && acceptedRegistrations.length > 0 && !hasRegularAcceptedRegistration && <p>该校只有应急备选企业报名，可从应急备选企业中确定考察企业名单。</p>}
+                                    {selectableCandidateRegistrations.map(r => (
                                         <label key={r.id} className="checkbox-label" style={{display: 'block', margin: '6px 0'}}>
                                             <input type="checkbox" checked={selectedCandidateIds.includes(r.enterpriseId)} onChange={() => toggleCandidate(r.enterpriseId)} />
-                                            {r.enterpriseName}
+                                            {r.enterpriseName}{emergencyEnterpriseIdSet.has(r.enterpriseId) ? '（应急备选）' : ''}
                                         </label>
                                     ))}
                                     {!isWorkflowViewOnly && ['报名审核中', '备选确认中'].includes(selectedAnnouncement?.status) && (
-                                        <button className="btn btn-primary" onClick={handleConfirmCandidates}>确认备选企业</button>
+                                        <button className="btn btn-primary" onClick={handleConfirmCandidates}>确认考察企业</button>
                                     )}
                                 </div>
                             )}
@@ -3169,14 +3390,40 @@
                             {currentStep >= 4 && (
                                 <div className="workflow-section">
                                     <h4>④ 组织考察</h4>
-                                    {candidateRegistrations.map(r => (
-                                        <div key={r.id} className="info-item">
-                                            <span>{r.enterpriseName}</span>
-                                            {!isWorkflowViewOnly && <button className="btn-small btn-primary" onClick={() => openInspectionModal(r)}>记录考察</button>}
-                                        </div>
-                                    ))}
+                                    {candidateRegistrations.map(r => {
+                                        const inspection = findInspectionForRegistration(r);
+                                        const inspectionStatus = inspection
+                                            ? inspection.passed === true ? '通过' : inspection.passed === false ? '不通过' : '未确认'
+                                            : '';
+                                        return (
+                                            <div key={r.id} className="info-item">
+                                                <span>{r.enterpriseName}{inspection ? `（${inspectionStatus}）` : ''}</span>
+                                                {!isWorkflowViewOnly && <button className="btn-small btn-primary" onClick={() => openInspectionModal(r)}>{inspection ? '修改考察' : '记录考察'}</button>}
+                                            </div>
+                                        );
+                                    })}
                                     {inspections.length > 0 && <p>考察通过：{passedInspections.length} 家</p>}
-                                    {!isWorkflowViewOnly && <button className="btn btn-primary" style={{marginTop: '12px'}} onClick={openShortlistModal}>确定入围企业</button>}
+                                    {canEnableEmergencySupplement && (
+                                        <div style={{marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e5e7eb'}}>
+                                            <h4>应急备选补充考察</h4>
+                                            <p className="form-hint">非应急考察企业不足3家且均不通过时，可从已报名且审核通过的应急备选供应商中产生补充考察企业。符合条件不少于5家时选择不少于5家；少于5家时全部选择。</p>
+                                            <div className="form-group">
+                                                <label>补充考察企业</label>
+                                                {emergencyAcceptedRegistrations.map(r => (
+                                                    <label key={r.id} className="checkbox-label" style={{display: 'block', margin: '6px 0'}}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={emergencySupplementIds.includes(r.enterpriseId)}
+                                                            onChange={() => toggleEmergencySupplement(r.enterpriseId)}
+                                                        />
+                                                        {r.enterpriseName}（应急备选）
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            {!isWorkflowViewOnly && <button className="btn btn-primary" onClick={handleEmergencySupplement}>确认应急备选补充考察企业</button>}
+                                        </div>
+                                    )}
+                                    {!isWorkflowViewOnly && !canEnableEmergencySupplement && areCurrentCandidateInspectionsComplete && <button className="btn btn-primary" style={{marginTop: '12px'}} onClick={openShortlistModal}>确定入围企业</button>}
                                 </div>
                             )}
 
@@ -3186,7 +3433,6 @@
                                     <h4>⑤ 确定入围企业</h4>
                                     <p>已入围 {shortlistedEnterprises.length} 家，入围企业至少 3 家。</p>
                                     {shortlistedEnterprises.map(e => <div key={e.enterpriseId} className="info-item"><span>{e.enterpriseName}</span></div>)}
-                                    {!isWorkflowViewOnly && !results.length && <button className="btn btn-primary" onClick={() => openResultModal()}>录入首次投票结果</button>}
                                 </div>
                             )}
 
@@ -3219,7 +3465,6 @@
                                         !isWorkflowViewOnly && !latestRevoteResult && <button className="btn btn-primary" onClick={() => openResultModal()}>录入首次投票结果</button>
                                     )}
                                     {!isWorkflowViewOnly && selectedAnnouncement?.status === '家长投票中' && latestRevoteResult && !finalResult && <button className="btn btn-primary" onClick={() => openResultModal(latestRevoteResult)}>第二次家长投票</button>}
-                                    {!isWorkflowViewOnly && finalResult && <button className="btn btn-primary" onClick={openContractModal}>签订遴选合同</button>}
                                 </div>
                             )}
 
@@ -3252,7 +3497,7 @@
                                         <label>选择企业 <span className="required">*</span></label>
                                         <select value={newReg.enterpriseId} onChange={e => { const ent = enterpriseList.find(x => x.id === e.target.value); setNewReg({...newReg, enterpriseId: e.target.value, enterpriseName: ent?.name || ''}); }} required>
                                             <option value="">请选择企业</option>
-                                            {enterpriseList.map(ent => <option key={ent.id} value={ent.id}>{ent.name}</option>)}
+                                            {enterpriseList.map(ent => <option key={ent.id} value={ent.id}>{formatRegistrationEnterpriseName(ent)}</option>)}
                                         </select>
                                     </div>
                                     <div className="form-group"><label>联系人</label><input type="text" value={newReg.contactPerson} onChange={e => setNewReg({...newReg, contactPerson: e.target.value})} placeholder="请输入联系人" /></div>
@@ -3272,8 +3517,8 @@
                                     <div className="form-group"><label>考察日期</label><input type="date" value={inspData.inspectionTime} onChange={e => setInspData({...inspData, inspectionTime: e.target.value})} /></div>
                                     <div className="form-group"><label>考察地点</label><input type="text" value={inspData.inspectionLocation} onChange={e => setInspData({...inspData, inspectionLocation: e.target.value})} placeholder="请输入考察地点" /></div>
                                     <div className="form-group"><label>考察人员</label><input type="text" value={inspData.inspectors} onChange={e => setInspData({...inspData, inspectors: e.target.value})} placeholder="请输入考察人员" /></div>
-                                    <div className="form-group"><label>考察结论</label><textarea value={inspData.inspectionResult} onChange={e => setInspData({...inspData, inspectionResult: e.target.value})} rows="3" placeholder="请输入考察结论" /></div>
-                                    <div className="form-group"><label>考察结果</label><select value={inspData.passed === null ? '' : inspData.passed ? 'true' : 'false'} onChange={e => setInspData({...inspData, passed: e.target.value === 'true' ? true : e.target.value === 'false' ? false : null})}><option value="">请选择</option><option value="true">通过</option><option value="false">不通过</option></select></div>
+                                    <div className="form-group"><label>考察结论{inspData.passed === false && <span className="required"> *</span>}</label><textarea value={inspData.inspectionResult} onChange={e => setInspData({...inspData, inspectionResult: e.target.value})} rows="3" placeholder={inspData.passed === false ? '请输入考察不通过原因' : '请输入考察结论'} /></div>
+                                    <div className="form-group"><label>考察结果 <span className="required">*</span></label><select required value={inspData.passed === null ? '' : inspData.passed ? 'true' : 'false'} onChange={e => setInspData({...inspData, passed: e.target.value === 'true' ? true : e.target.value === 'false' ? false : null})}><option value="">请选择</option><option value="true">通过</option><option value="false">不通过</option></select></div>
                                     <div className="modal-footer"><button type="button" className="btn" onClick={() => setShowInspModal(false)}>取消</button><button type="submit" className="btn-primary">保存</button></div>
                                 </form>
                             </div>
@@ -3380,7 +3625,7 @@
         const STEPS = [
             { id: 1, label: '发布公告', key: '项目已立项' },
             { id: 2, label: '报名审核', key: '报名审核中' },
-            { id: 3, label: '确定备选', key: 'candidates' },
+            { id: 3, label: '确定考察企业', key: 'candidates' },
             { id: 4, label: '组织考察', key: 'inspections' },
             { id: 5, label: '确定入围', key: 'shortlisted' },
             { id: 6, label: '家长投票', key: 'results' },
@@ -3872,12 +4117,12 @@
                                     </div>
 
                                     <div className="workflow-section">
-                                        <h4>③ 备选企业</h4>
+                                        <h4>③ 考察企业</h4>
                                         <table className="data-table">
-                                            <thead><tr><th>确认时间</th><th>确定方式</th><th>备选企业</th></tr></thead>
+                                            <thead><tr><th>确认时间</th><th>确定方式</th><th>考察企业</th></tr></thead>
                                             <tbody>
                                                 {workflowDetail.candidates.map(c => <tr key={c.id}><td>{c.confirmationTime?.split('T')[0] || '-'}</td><td>{c.determinationMethod || '-'}</td><td>{(c.confirmedEnterprises || []).map(e => e.enterpriseName).join('、') || '-'}</td></tr>)}
-                                                {workflowDetail.candidates.length === 0 && renderEmpty(3, '暂无备选企业数据')}
+                                                {workflowDetail.candidates.length === 0 && renderEmpty(3, '暂无考察企业数据')}
                                             </tbody>
                                         </table>
                                     </div>
@@ -5726,7 +5971,7 @@
                 } else if (['备选确认中', '考察中', '重新发布'].includes(activeAnnouncement.status)) {
                     relatedEnterpriseIds = (latestCandidate?.confirmedEnterprises || []).map(e => e.enterpriseId);
                     if (relatedEnterpriseIds.length === 0) relatedEnterpriseIds = registrations.filter(r => r.status === '审核通过' || r.status === '已受理').map(r => r.enterpriseId);
-                    relatedSource = '当前项目处于备选/考察阶段，显示备选企业';
+                    relatedSource = '当前项目处于考察阶段，显示考察企业';
                 } else if ((activeAnnouncement.status || '').includes('入围') || (activeAnnouncement.status || '').includes('中标') || (activeAnnouncement.status || '').includes('投票') || activeAnnouncement.status === '待签合同') {
                     relatedEnterpriseIds = (latestShortlisted?.shortlistedEnterprises || []).map(e => e.enterpriseId);
                     relatedSource = '当前项目处于入围/家长投票阶段，显示入围供应商';

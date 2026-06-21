@@ -82,8 +82,15 @@ const {
     previousSelectionStatus,
     assertWorkflowMutable,
     validateAnnouncementPublish,
+    validateSelectionWorkgroup,
+    validateSelectionPublishPrerequisites,
     validateRegistrationReview,
     validateCandidateSelection,
+    validateCandidateEmergencySelection,
+    validateInspectionRecord,
+    validateEmergencySupplementEligibility,
+    validateEmergencySupplementSelection,
+    getPassedLatestInspections,
     validateShortlistSelection,
     validateVotingMetadata,
     determineVotingWinner
@@ -2735,6 +2742,7 @@ app.post('/api/selection/announcements/:id/publish', authMiddleware, (req, res) 
 
     try {
         validateAnnouncementPublish(announcement);
+        validateSelectionPublishPrerequisites(announcement);
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
@@ -2743,6 +2751,48 @@ app.post('/api/selection/announcements/:id/publish', authMiddleware, (req, res) 
         ...announcement,
         status: '报名审核中',
         publishTime: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+
+    writeJSON('selectionAnnouncements.json', announcements);
+    res.json(announcements[idx]);
+});
+
+// 登记校外供餐遴选工作小组
+app.put('/api/selection/announcements/:id/workgroup', authMiddleware, (req, res) => {
+    if (!['school', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: '无权限' });
+    }
+
+    const announcements = readJSON('selectionAnnouncements.json');
+    const idx = announcements.findIndex(a => a.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: '公告不存在' });
+
+    const announcement = announcements[idx];
+    if (req.user.role === 'school' && announcement.schoolId !== (req.user.schoolId || req.user.id)) {
+        return res.status(403).json({ error: '无权限' });
+    }
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
+    if (announcement.serviceType !== '校外供餐') {
+        return res.status(400).json({ error: '仅校外供餐遴选项目需要登记工作小组' });
+    }
+
+    let validated;
+    try {
+        validated = validateSelectionWorkgroup({
+            memberCount: req.body.memberCount,
+            parentCount: req.body.parentCount
+        });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+
+    announcements[idx] = {
+        ...announcement,
+        workgroupMemberCount: validated.memberCount,
+        workgroupParentCount: validated.parentCount,
+        workgroupParentRatio: Number(validated.parentRatio.toFixed(4)),
+        workgroupRegisteredAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
 
@@ -2999,8 +3049,8 @@ app.get('/api/selection/my-registrations', authMiddleware, (req, res) => {
     res.json(filtered);
 });
 
-// --- 备选企业确认 API ---
-// 确认备选企业
+// --- 考察企业确认 API ---
+// 确认考察企业
 app.post('/api/selection/candidates', authMiddleware, (req, res) => {
     if (!['school', 'admin'].includes(req.user.role)) {
         return res.status(403).json({ error: '无权限' });
@@ -3018,18 +3068,35 @@ app.post('/api/selection/candidates', authMiddleware, (req, res) => {
     const acceptedRegs = registrations.filter(r =>
         r.announcementId === announcementId && ['审核通过', '已受理'].includes(r.status)
     );
-    const selectedEnterpriseIds = enterpriseIds || [];
+    const selectedEnterpriseIds = Array.from(new Set(enterpriseIds || []));
+    const cateringCompanies = announcement.serviceType === '校外供餐' ? readJSON('cateringCompanies.json') : [];
+    const emergencyEnterpriseIds = new Set(
+        cateringCompanies
+            .filter(company => company.应急备选企业 === '是' || company.emergencyBackup === '是')
+            .map(company => company.id)
+    );
+    const hasRegularAcceptedRegistration = announcement.serviceType === '校外供餐' &&
+        acceptedRegs.some(reg => !emergencyEnterpriseIds.has(reg.enterpriseId));
+    const selectableRegs = hasRegularAcceptedRegistration
+        ? acceptedRegs.filter(reg => !emergencyEnterpriseIds.has(reg.enterpriseId))
+        : acceptedRegs;
 
     try {
         validateCandidateSelection({
-            acceptedCount: acceptedRegs.length,
+            acceptedCount: selectableRegs.length,
             selectedCount: selectedEnterpriseIds.length
+        });
+        validateCandidateEmergencySelection({
+            serviceType: announcement.serviceType,
+            acceptedRegistrations: acceptedRegs,
+            selectedEnterpriseIds,
+            emergencyEnterpriseIds
         });
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
 
-    const confirmedEnterprises = acceptedRegs
+    const confirmedEnterprises = selectableRegs
         .filter(r => selectedEnterpriseIds.includes(r.enterpriseId))
         .map(r => ({
             enterpriseId: r.enterpriseId,
@@ -3066,7 +3133,107 @@ app.post('/api/selection/candidates', authMiddleware, (req, res) => {
     res.json(newCandidate);
 });
 
-// 获取备选企业列表
+// 启用应急备选供应商补充考察
+app.post('/api/selection/candidates/emergency-supplement', authMiddleware, (req, res) => {
+    if (!['school', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({ error: '无权限' });
+    }
+
+    const { announcementId, enterpriseIds } = req.body;
+
+    const announcements = readJSON('selectionAnnouncements.json');
+    const announcement = announcements.find(a => a.id === announcementId);
+    if (!announcement) return res.status(404).json({ error: '公告不存在' });
+    if (req.user.role === 'school' && announcement.schoolId !== (req.user.schoolId || req.user.id)) {
+        return res.status(403).json({ error: '无权限' });
+    }
+    if (!ensureSelectionWorkflowMutable(announcement, res)) return;
+    const candidates = readJSON('selectionCandidates.json');
+    if (candidates.some(c => c.announcementId === announcementId && c.source === 'emergencySupplement')) {
+        return res.status(400).json({ error: '该项目已启用应急备选补充考察' });
+    }
+
+    const cateringCompanies = announcement.serviceType === '校外供餐' ? readJSON('cateringCompanies.json') : [];
+    const emergencyEnterpriseIds = new Set(
+        cateringCompanies
+            .filter(company => company['应急备选企业'] === '是' || company.emergencyBackup === '是')
+            .map(company => company.id)
+    );
+    const registrations = readJSON('selectionRegistrations.json');
+    const acceptedRegs = registrations.filter(r =>
+        r.announcementId === announcementId && ['审核通过', '已受理'].includes(r.status)
+    );
+    const emergencyRegs = acceptedRegs.filter(reg => emergencyEnterpriseIds.has(reg.enterpriseId));
+    const selectedEnterpriseIds = Array.from(new Set(enterpriseIds || []));
+    const invalidSelectedId = selectedEnterpriseIds.find(id =>
+        !emergencyRegs.some(reg => reg.enterpriseId === id)
+    );
+    if (invalidSelectedId) {
+        return res.status(400).json({ error: '只能从已报名且审核通过的应急备选供应商中确定补充考察企业' });
+    }
+
+    const inspections = readJSON('selectionInspections.json')
+        .filter(i => i.announcementId === announcementId);
+
+    const latestCandidate = candidates
+        .filter(c => c.announcementId === announcementId)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+    const regularCandidateEnterpriseIds = (latestCandidate?.confirmedEnterprises || [])
+        .map(enterprise => enterprise.enterpriseId)
+        .filter(id => !emergencyEnterpriseIds.has(id));
+
+    try {
+        validateEmergencySupplementEligibility({
+            serviceType: announcement.serviceType,
+            inspections,
+            emergencyEnterpriseIds,
+            regularCandidateEnterpriseIds
+        });
+        validateEmergencySupplementSelection({
+            availableCount: emergencyRegs.length,
+            selectedCount: selectedEnterpriseIds.length
+        });
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
+
+    const confirmedEnterprises = emergencyRegs
+        .filter(reg => selectedEnterpriseIds.includes(reg.enterpriseId))
+        .map(reg => ({
+            enterpriseId: reg.enterpriseId,
+            enterpriseName: reg.enterpriseName,
+            enterpriseType: reg.enterpriseType,
+            confirmedAt: new Date().toISOString()
+        }));
+
+    const newCandidate = {
+        id: `sel_cand_${Date.now()}`,
+        announcementId,
+        schoolId: req.user.schoolId || req.user.id,
+        schoolName: announcement.schoolName,
+        confirmedEnterprises,
+        source: 'emergencySupplement',
+        determinationMethod: '工作小组确认启用应急备选补充考察',
+        confirmationTime: new Date().toISOString(),
+        status: '已确认',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+
+    candidates.push(newCandidate);
+    writeJSON('selectionCandidates.json', candidates);
+
+    const annIdx = announcements.findIndex(a => a.id === announcementId);
+    if (annIdx !== -1) {
+        announcements[annIdx].status = '考察中';
+        announcements[annIdx].updatedAt = new Date().toISOString();
+        writeJSON('selectionAnnouncements.json', announcements);
+    }
+
+    res.json(newCandidate);
+});
+
+// 获取考察企业列表
 app.get('/api/selection/candidates', authMiddleware, (req, res) => {
     const user = req.user;
 
@@ -3092,7 +3259,7 @@ app.post('/api/selection/inspections', authMiddleware, (req, res) => {
         return res.status(403).json({ error: '无权限' });
     }
 
-    const { announcementId, enterpriseId, enterpriseName, inspectionTime, inspectionLocation, inspectors, inspectionResult, attachments } = req.body;
+    const { announcementId, enterpriseId, enterpriseName, inspectionTime, inspectionLocation, inspectors, inspectionResult, attachments, passed } = req.body;
 
     const registrations = readJSON('selectionRegistrations.json');
     const registration = registrations.find(r => r.announcementId === announcementId && r.enterpriseId === enterpriseId);
@@ -3101,6 +3268,11 @@ app.post('/api/selection/inspections', authMiddleware, (req, res) => {
     const announcement = announcements.find(a => a.id === announcementId);
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
     if (!ensureSelectionWorkflowMutable(announcement, res)) return;
+    try {
+        validateInspectionRecord({ passed, inspectionResult });
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
 
     // 生成考察编号
     const year = new Date().getFullYear();
@@ -3119,9 +3291,9 @@ app.post('/api/selection/inspections', authMiddleware, (req, res) => {
         inspectors,
         inspectionResult,
         attachments: attachments || [],
-        passed: null,
-        passTime: null,
-        passComments: null,
+        passed,
+        passTime: new Date().toISOString(),
+        passComments: passed ? '\u8003\u5bdf\u901a\u8fc7' : '\u8003\u5bdf\u4e0d\u901a\u8fc7',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -3166,7 +3338,12 @@ app.put('/api/selection/inspections/:id', authMiddleware, (req, res) => {
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
     if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
-    const { inspectionTime, inspectionLocation, inspectors, inspectionResult, attachments } = req.body;
+    const { inspectionTime, inspectionLocation, inspectors, inspectionResult, attachments, passed } = req.body;
+    try {
+        validateInspectionRecord({ passed, inspectionResult });
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
     inspections[idx] = {
         ...inspections[idx],
         inspectionTime,
@@ -3174,6 +3351,9 @@ app.put('/api/selection/inspections/:id', authMiddleware, (req, res) => {
         inspectors,
         inspectionResult,
         attachments: attachments || inspections[idx].attachments,
+        passed,
+        passTime: new Date().toISOString(),
+        passComments: passed ? '\u8003\u5bdf\u901a\u8fc7' : '\u8003\u5bdf\u4e0d\u901a\u8fc7',
         updatedAt: new Date().toISOString()
     };
 
@@ -3221,11 +3401,19 @@ app.post('/api/selection/inspections/:id/fail', authMiddleware, (req, res) => {
     if (!announcement) return res.status(404).json({ error: '公告不存在' });
     if (!ensureSelectionWorkflowMutable(announcement, res)) return;
 
+    const failComments = String(req.body.comments || '').trim();
+    try {
+        validateInspectionRecord({ passed: false, inspectionResult: failComments });
+    } catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
+
     inspections[idx] = {
         ...inspections[idx],
         passed: false,
         passTime: new Date().toISOString(),
-        passComments: req.body.comments || '',
+        inspectionResult: failComments,
+        passComments: failComments,
         updatedAt: new Date().toISOString()
     };
 
@@ -3249,7 +3437,9 @@ app.post('/api/selection/shortlisted', authMiddleware, (req, res) => {
 
     // 获取考察通过的企业
     const inspections = readJSON('selectionInspections.json');
-    const passedInspections = inspections.filter(i => i.announcementId === announcementId && i.passed === true);
+    const passedInspections = getPassedLatestInspections(
+        inspections.filter(i => i.announcementId === announcementId)
+    );
     const selectedEnterpriseIds = enterpriseIds || [];
 
     try {

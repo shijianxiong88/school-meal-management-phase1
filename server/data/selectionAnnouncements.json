@@ -33,5 +33,27 @@
     "status": "已完成",
     "createdAt": "2026-06-02T15:39:24.788Z",
     "updatedAt": "2026-06-05T16:18:56.128Z"
+  },
+  {
+    "id": "sel_ann_1781852836899",
+    "announcementNo": "XL-2026-003",
+    "projectNo": "XL-2026-003",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "canteenId": null,
+    "canteenName": "校外供餐",
+    "serviceType": "校外供餐",
+    "title": "111",
+    "content": "1111",
+    "publishUrl": "HTTP://WWW.JJ.COM",
+    "registrationDeadline": "2026-06-20",
+    "publishTime": "2026-06-19T07:08:19.346Z",
+    "status": "已完成",
+    "createdAt": "2026-06-19T07:07:16.899Z",
+    "updatedAt": "2026-06-21T07:08:02.631Z",
+    "workgroupMemberCount": 20,
+    "workgroupParentCount": 16,
+    "workgroupParentRatio": 0.8,
+    "workgroupRegisteredAt": "2026-06-19T07:07:40.340Z"
   }
 ]

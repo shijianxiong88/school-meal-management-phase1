@@ -84,5 +84,62 @@
     "status": "已确认",
     "createdAt": "2026-06-03T14:36:36.976Z",
     "updatedAt": "2026-06-03T14:36:36.976Z"
+  },
+  {
+    "id": "sel_cand_1781854932380",
+    "announcementId": "sel_ann_1781852836899",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "confirmedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_001",
+        "enterpriseName": "泉州市松花春水餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-19T07:42:12.380Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_002",
+        "enterpriseName": "晋江市晋美餐饮管理有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-19T07:42:12.380Z"
+      }
+    ],
+    "determinationMethod": "线下随机确定",
+    "confirmationTime": "2026-06-19T07:42:12.380Z",
+    "status": "已确认",
+    "createdAt": "2026-06-19T07:42:12.380Z",
+    "updatedAt": "2026-06-19T07:42:12.380Z"
+  },
+  {
+    "id": "sel_cand_1782024915687",
+    "announcementId": "sel_ann_1781852836899",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "confirmedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_011",
+        "enterpriseName": "泉州市汇禾餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-21T06:55:15.687Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_013",
+        "enterpriseName": "泉州市康禾餐饮管理有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-21T06:55:15.687Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_015",
+        "enterpriseName": "泉州市瑞昇餐饮服务有限公司",
+        "enterpriseType": "未知",
+        "confirmedAt": "2026-06-21T06:55:15.687Z"
+      }
+    ],
+    "source": "emergencySupplement",
+    "determinationMethod": "工作小组确认启用应急备选补充考察",
+    "confirmationTime": "2026-06-21T06:55:15.687Z",
+    "status": "已确认",
+    "createdAt": "2026-06-21T06:55:15.687Z",
+    "updatedAt": "2026-06-21T06:55:15.687Z"
   }
 ]

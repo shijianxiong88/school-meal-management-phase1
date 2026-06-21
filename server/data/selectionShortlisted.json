@@ -52,5 +52,32 @@
     "status": "已确定",
     "createdAt": "2026-06-04T15:56:53.499Z",
     "updatedAt": "2026-06-04T15:56:53.499Z"
+  },
+  {
+    "id": "sel_short_1782024954354",
+    "announcementId": "sel_ann_1781852836899",
+    "schoolId": "school_1777984075339",
+    "schoolName": "晋江市第九小学",
+    "shortlistedEnterprises": [
+      {
+        "enterpriseId": "catering_2025_2027_015",
+        "enterpriseName": "泉州市瑞昇餐饮服务有限公司",
+        "shortlistedAt": "2026-06-21T06:55:54.354Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_013",
+        "enterpriseName": "泉州市康禾餐饮管理有限公司",
+        "shortlistedAt": "2026-06-21T06:55:54.354Z"
+      },
+      {
+        "enterpriseId": "catering_2025_2027_011",
+        "enterpriseName": "泉州市汇禾餐饮服务有限公司",
+        "shortlistedAt": "2026-06-21T06:55:54.354Z"
+      }
+    ],
+    "shortlistTime": "2026-06-21T06:55:54.354Z",
+    "status": "已确定",
+    "createdAt": "2026-06-21T06:55:54.354Z",
+    "updatedAt": "2026-06-21T06:55:54.354Z"
   }
 ]
